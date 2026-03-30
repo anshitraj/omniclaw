@@ -242,21 +242,26 @@ def test_create_facilitator_requires_api_key():
     import os
 
     # Save original env
-    orig = os.environ.get("FACILITATOR_API_KEY")
+    orig_facilitator = os.environ.get("FACILITATOR_API_KEY")
+    orig_circle = os.environ.get("CIRCLE_API_KEY")
 
-    # Remove env var
-    if orig:
+    # Remove env vars
+    if orig_facilitator:
         del os.environ["FACILITATOR_API_KEY"]
+    if orig_circle:
+        del os.environ["CIRCLE_API_KEY"]
 
     try:
         from omniclaw.seller import create_facilitator
 
         with pytest.raises(ValueError, match="api_key"):
-            create_facilitator(provider="circle", api_key="")
+            create_facilitator(provider="circle", api_key=None)
     finally:
         # Restore env
-        if orig:
-            os.environ["FACILITATOR_API_KEY"] = orig
+        if orig_facilitator:
+            os.environ["FACILITATOR_API_KEY"] = orig_facilitator
+        if orig_circle:
+            os.environ["CIRCLE_API_KEY"] = orig_circle
 
 
 if __name__ == "__main__":

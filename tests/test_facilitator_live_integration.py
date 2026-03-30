@@ -529,8 +529,9 @@ async def test_all_facilitators_interface():
 
     print(f"\nFacilitators tested: {results}")
 
-    # Must have at least one facilitator tested
-    assert len(results) > 0, "No facilitators were tested - set at least one API key"
+    # Skip if no facilitators could be tested (no API keys in CI)
+    if len(results) == 0:
+        pytest.skip("No facilitators were tested - no API keys available")
 
 
 if __name__ == "__main__":

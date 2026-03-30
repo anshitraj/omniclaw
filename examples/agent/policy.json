@@ -1,0 +1,119 @@
+{
+  "version": "1.0",
+  "tokens": {
+    "payment-agent-token": {
+      "wallet_alias": "payment-agent",
+      "active": true,
+      "label": "Main Payment Agent"
+    },
+    "api-agent-token": {
+      "wallet_alias": "api-agent", 
+      "active": true,
+      "label": "API Payments"
+    },
+    "small-agent-token": {
+      "wallet_alias": "small-agent",
+      "active": true,
+      "label": "Small Payments Only"
+    }
+  },
+  "wallets": {
+    "payment-agent": {
+      "name": "Main Payment Agent",
+      "description": "Primary agent for general payments",
+      "limits": {
+        "daily_max": "100.00",
+        "hourly_max": "50.00",
+        "per_tx_max": "25.00",
+        "per_tx_min": "0.01"
+      },
+      "rate_limits": {
+        "per_minute": 10,
+        "per_hour": 100
+      },
+      "recipients": {
+        "mode": "whitelist",
+        "addresses": [
+          "0x742d35Cc6634C0532925a3b844Bc9e7595f",
+          "0x1234567890123456789012345678901234567890"
+        ],
+        "domains": [
+          "api.stripe.com",
+          "api.paddle.com",
+          "api.example.com"
+        ]
+      },
+      "confirm_threshold": "10.00"
+    },
+    "api-agent": {
+      "name": "API Payments",
+      "description": "Agent for API-based payments",
+      "limits": {
+        "daily_max": "500.00",
+        "hourly_max": "200.00",
+        "per_tx_max": "100.00",
+        "per_tx_min": "0.10"
+      },
+      "rate_limits": {
+        "per_minute": 50,
+        "per_hour": 500
+      },
+      "recipients": {
+        "mode": "whitelist",
+        "domains": [
+          "api.example.com",
+          "api.provider.com"
+        ]
+      },
+      "confirm_threshold": "50.00"
+    },
+    "small-agent": {
+      "name": "Small Payments Only",
+      "description": "Agent limited to small micro-payments",
+      "limits": {
+        "daily_max": "10.00",
+        "per_tx_max": "1.00",
+        "per_tx_min": "0.01"
+      },
+      "rate_limits": {
+        "per_minute": 5,
+        "per_hour": 20
+      },
+      "recipients": {
+        "mode": "whitelist",
+        "addresses": [
+          "0x742d35Cc6634C0532925a3b844Bc9e7595f"
+        ]
+      },
+      "confirm_threshold": "0.00"
+    },
+    "no-limits": {
+      "name": "Unlimited Agent",
+      "description": "No limits - use with caution",
+      "recipients": {
+        "mode": "whitelist",
+        "addresses": [
+          "0x742d35Cc6634C0532925a3b844Bc9e7595f"
+        ]
+      }
+    },
+    "blacklist-example": {
+      "name": "Blacklist Example",
+      "description": "Example showing blacklist mode",
+      "limits": {
+        "daily_max": "1000.00",
+        "per_tx_max": "100.00"
+      },
+      "recipients": {
+        "mode": "blacklist",
+        "addresses": [
+          "0xBADBADBADBADBADBADBADBADBADBADBADBADBAD"
+        ],
+        "domains": [
+          "evil.com",
+          "scam.io"
+        ]
+      }
+    }
+  }
+}

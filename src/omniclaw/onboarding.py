@@ -14,6 +14,12 @@ Usage:
 
 from __future__ import annotations
 
+import warnings
+
+# Suppress deprecation warnings from downstream dependencies (e.g. web3 using pkg_resources)
+warnings.filterwarnings("ignore", category=DeprecationWarning, module="pkg_resources")
+warnings.filterwarnings("ignore", message=".*pkg_resources is deprecated.*")
+
 import contextlib
 import hashlib
 import json
@@ -182,6 +188,27 @@ def load_managed_entity_secret(api_key: str) -> str | None:
         return secret
     secret = entry.get("entity_secret")
     return secret if isinstance(secret, str) and secret else None
+
+
+def resolve_entity_secret(api_key: str | None = None) -> str | None:
+    """
+    Find the best available entity secret for the current session.
+
+    Resolution order:
+    1. OS environment (ENTITY_SECRET)
+    2. Managed store (matching CIRCLE_API_KEY)
+    """
+    # 1. Environment priority
+    env_secret = os.getenv("ENTITY_SECRET")
+    if env_secret:
+        return env_secret
+
+    # 2. Managed store fallback
+    resolved_api_key = api_key or os.getenv("CIRCLE_API_KEY")
+    if resolved_api_key:
+        return load_managed_entity_secret(resolved_api_key)
+
+    return None
 
 
 def get_config_dir() -> Path:
@@ -604,6 +631,7 @@ def doctor(
     """
     resolved_api_key = api_key or os.getenv("CIRCLE_API_KEY")
     env_entity_secret = entity_secret or os.getenv("ENTITY_SECRET")
+    managed_secret = None
     if resolved_api_key:
         load_managed_credentials(resolved_api_key)
         managed_secret = load_managed_entity_secret(resolved_api_key)
@@ -647,6 +675,7 @@ def doctor(
         "recovery_file_found": bool(recovery_file),
         "recovery_file_path": str(recovery_file) if recovery_file else None,
         "warnings": warnings,
+        "can_sync_to_env": bool(managed_secret and not env_entity_secret),
     }
 
 
@@ -710,6 +739,9 @@ def print_doctor_status(
         print("Next steps:")
         for step in next_steps:
             print(f"  - {step}")
+        if status.get("can_sync_to_env"):
+            print("\n  ð¡ TIP: You have a saved Entity Secret but it's not in your environment.")
+            print("     Run: omniclaw setup  # to sync it automatically")
         print()
 
     print("Ready to use." if status["ready"] else "Setup needs attention.")

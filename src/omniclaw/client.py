@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import contextvars
 import os
 import re
@@ -399,23 +400,27 @@ class OmniClaw:
         Raises:
             NanopaymentNotInitializedError: If nanopayments are disabled and facilitator is Circle.
         """
+        # Return cached middleware if available and no overrides specified
+        if self._gateway_middleware is not None and seller_address is None and facilitator is None:
+            return self._gateway_middleware
+
+        # For Circle, we need nanopayments initialized
+        if (facilitator is None or facilitator == "circle") and (
+            not self._nano_client or not self._nano_vault
+        ):
+            raise NanopaymentNotInitializedError()
+
         # If no seller_address provided, try to get from wallet
         if not seller_address:
             if self._nano_vault:
                 # Try to get from existing wallet
-                seller_address = await self._nano_vault.get_address(alias=None)
+                with contextlib.suppress(Exception):
+                    seller_address = await self._nano_vault.get_address(alias=None)
             if not seller_address:
                 raise ValueError(
                     "seller_address is required. "
                     "Provide your payment address, or create a wallet first."
                 )
-
-        # For Circle, we need nanopayments initialized
-        if (facilitator is None or facilitator == "circle") and (not self._nano_client or not self._nano_vault):
-            raise NanopaymentNotInitializedError(
-                "Circle Gateway requires nanopayments. "
-                "Either use a different facilitator or initialize with Circle API key."
-            )
 
         # Create facilitator if not Circle
         facilitator_client = None
@@ -493,6 +498,7 @@ class OmniClaw:
                 seller_address=seller_address,
                 facilitator=facilitator,
             )
+
         price_str = price
 
         async def wrapper() -> PaymentInfo:

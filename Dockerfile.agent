@@ -1,0 +1,25 @@
+FROM python:3.12-slim
+
+# Install uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
+WORKDIR /app
+
+# Install git for version detection
+RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
+
+COPY pyproject.toml README.md uv.lock* ./
+
+# Sync dependencies using uv
+RUN uv sync --frozen --no-install-project || uv sync --no-install-project
+
+COPY src/ src/
+
+# Sync project
+RUN uv sync --frozen || uv sync
+
+EXPOSE 8080
+
+ENV OMNICLAW_AGENT_PORT=8080
+
+CMD ["uv", "run", "omniclaw", "server", "--host", "0.0.0.0", "--port", "8080"]

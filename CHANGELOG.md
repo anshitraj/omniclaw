@@ -4,6 +4,21 @@ All notable changes to OmniClaw are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.0] - 2026-03-29
+
+### Added
+- **"Financial Firewall" Model**: Full production hardening with strict Owner/Agent role isolation.
+- **Premium Agent CLI**: New `status`, `ledger`, and `serve` commands for `omniclaw-cli`.
+- **Automated x402**: Agents now autonomously handle HTTP 402 "Payment Required" flows.
+- **Zero-Friction Onboarding**: Automated entity secret generation and smart wallet preparation.
+- **Service Exposure**: Agents can now expose their own payment-gated services using `omniclaw-cli serve`.
+- **Idempotency & Safety**: Mandatory idempotency keys for all payments and automated "simulate-first" dry-runs.
+
+### Changed
+- Refactored `SKILL.md` to the 2026 High-Fidelity standard for AI agents.
+- Consolidated all agent onboarding into a single `bootstrap.sh` self-onboarding script.
+- Simplified Owner deployment to a single `docker compose up` flow.
+
 ## [0.0.3] - 2026-03-25
 
 ### Added
