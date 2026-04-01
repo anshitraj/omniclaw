@@ -47,7 +47,7 @@ class Config:
     gateway_api_url: str = "https://gateway-api-testnet.circle.com/v1"
 
     # Timeouts (seconds)
-    request_timeout: float = 30.0
+    request_timeout: float = 60.0
     transaction_poll_interval: float = 2.0
     transaction_poll_timeout: float = 120.0
 
@@ -133,6 +133,9 @@ class Config:
         env = override_or_env("env", "OMNICLAW_ENV", "development")
         rpc_url = override_or_env("rpc_url", "OMNICLAW_RPC_URL")
 
+        storage_backend = override_or_env("storage_backend", "OMNICLAW_STORAGE_BACKEND", "memory")
+        redis_url = override_or_env("redis_url", "OMNICLAW_REDIS_URL")
+
         # Auto-detect nanopayments environment from OMNICLAW_ENV
         # production/prod/mainnet → mainnet, otherwise testnet
         is_production = env in {"prod", "production", "mainnet"}
@@ -159,7 +162,7 @@ class Config:
         confirm_always = (
             overrides["confirm_always"]
             if "confirm_always" in overrides
-            else (_get_env_var("OMNICLAW_CONFIRM_ALWAYS", "false").lower() == "true")
+            else (str(_get_env_var("OMNICLAW_CONFIRM_ALWAYS", "false")).lower() == "true")
         )
         confirm_threshold = override_or_env("confirm_threshold", "OMNICLAW_CONFIRM_THRESHOLD")
 
@@ -168,7 +171,7 @@ class Config:
         nanopayments_auto_topup = (
             overrides.get("nanopayments_auto_topup")
             if "nanopayments_auto_topup" in overrides
-            else (_get_env_var("OMNICLAW_NANOPAYMENTS_AUTO_TOPUP", "true").lower() == "true")
+            else (str(_get_env_var("OMNICLAW_NANOPAYMENTS_AUTO_TOPUP", "true")).lower() == "true")
         )
         nanopayments_topup_threshold = override_or_env(
             "nanopayments_topup_threshold", "OMNICLAW_NANOPAYMENTS_TOPUP_THRESHOLD", "1.00"
@@ -188,13 +191,13 @@ class Config:
         payment_strict_settlement = (
             overrides.get("payment_strict_settlement")
             if "payment_strict_settlement" in overrides
-            else (_get_env_var("OMNICLAW_STRICT_SETTLEMENT", "true").lower() == "true")
+            else (str(_get_env_var("OMNICLAW_STRICT_SETTLEMENT", "true")).lower() == "true")
         )
         auto_reconcile_pending_settlements = (
             overrides.get("auto_reconcile_pending_settlements")
             if "auto_reconcile_pending_settlements" in overrides
             else (
-                _get_env_var("OMNICLAW_AUTO_RECONCILE_PENDING_SETTLEMENTS", "false").lower()
+                str(_get_env_var("OMNICLAW_AUTO_RECONCILE_PENDING_SETTLEMENTS", "false")).lower()
                 == "true"
             )
         )
@@ -234,6 +237,8 @@ class Config:
             nanopayments_default_network=nanopayments_default_network,
             payment_strict_settlement=payment_strict_settlement,
             auto_reconcile_pending_settlements=auto_reconcile_pending_settlements,
+            storage_backend=storage_backend,
+            redis_url=redis_url,
         )
 
     def with_updates(self, **updates: Any) -> Config:
@@ -269,6 +274,8 @@ class Config:
             "nanopayments_default_network": self.nanopayments_default_network,
             "payment_strict_settlement": self.payment_strict_settlement,
             "auto_reconcile_pending_settlements": self.auto_reconcile_pending_settlements,
+            "storage_backend": self.storage_backend,
+            "redis_url": self.redis_url,
         }
         current.update(updates)
         return Config(**current)

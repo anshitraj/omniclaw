@@ -584,7 +584,10 @@ def create_facilitator(
     """
     import os
 
-    key = api_key or os.environ.get("FACILITATOR_API_KEY") or os.environ.get("CIRCLE_API_KEY")
+    if api_key is not None:
+        key = api_key
+    else:
+        key = os.environ.get("FACILITATOR_API_KEY") or os.environ.get("CIRCLE_API_KEY")
 
     if not key:
         raise ValueError("api_key is required")

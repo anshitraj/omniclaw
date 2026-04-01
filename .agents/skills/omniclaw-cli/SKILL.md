@@ -14,11 +14,79 @@ requires:
       Scoped agent token tied to your wallet. Set by the owner before your
       session starts. Never print, log, or transmit this value. If it is
       missing, stop and notify the owner — you cannot proceed without it.
-version: 1.0.0
+version: 0.0.2
 author: Omnuron AI
 ---
 
 # OmniClaw Agent Skill
+
+## Installation
+
+Install the CLI:
+
+```bash
+pip install omniclaw
+```
+
+Verify installation:
+
+```bash
+omniclaw-cli --version
+# or
+omniclaw-cli ping
+```
+
+---
+
+## Configuration (one-time setup)
+
+**IMPORTANT:** Your owner must provide these values before your session starts. Do NOT look for them yourself - ask your owner if they are missing.
+
+Your owner gives you:
+- `--server-url`: OmniClaw server URL (e.g., `https://api.omniclaw.com` or `http://localhost:8080`)
+- `--token`: Your scoped agent token (from your owner)
+- `--wallet`: Your wallet alias (e.g., `primary`)
+
+**Configure the CLI:**
+
+```bash
+omniclaw-cli configure \
+  --server-url <OMNICLAW_SERVER_URL> \
+  --token <AGENT_TOKEN> \
+  --wallet <WALLET_ALIAS>
+```
+
+**Verify configuration:**
+
+```bash
+omniclaw-cli configure --show
+```
+
+**If credentials are missing:** Stop and ask your owner. Do not proceed without them.
+
+---
+
+## Verify Setup
+
+Before making any payments, always verify your environment is ready:
+
+```bash
+omniclaw-cli status
+```
+
+Expected output:
+```
+Agent:     <your-agent-name>
+Wallet:    0x...
+Balance:   $X.XX available
+Guards:    active
+Circle:    connected ✅
+Circuit:   CLOSED ✅
+```
+
+If `Circuit: OPEN` or `Circle: disconnected`, wait 30 seconds and run `omniclaw-cli status` again. If it stays degraded, stop and notify the owner.
+
+---
 
 ## What this skill does
 
@@ -33,31 +101,6 @@ session. It lets you:
 It does not let you change your own spending limits, add recipients to
 whitelists, approve pending payments, or touch any wallet configuration.
 Those are owner-only. If you need any of those, stop and notify the owner.
-
----
-
-## Before you do anything
-
-**Check your environment is ready:**
-
-```bash
-omniclaw-cli status
-```
-
-Expected output:
-```
-Agent:     <your-agent-name>
-Wallet:    wlt_xxxxx
-Balance:   $X.XX available
-Guards:    active
-Network:   Arc Testnet
-Circle:    connected ✓
-Circuit:   CLOSED ✓
-```
-
-If `Circuit: OPEN` or `Circle: disconnected`, wait 30 seconds and run
-`omniclaw-cli status` again before attempting any payment. If it stays degraded,
-notify the owner.
 
 ---
 
@@ -182,6 +225,64 @@ before you can pay.
 
 ---
 
+## Payment Intents (authorize now, capture later)
+
+For payments you want to authorize first and capture later:
+
+**Create a payment intent (authorize):**
+```bash
+omniclaw-cli create-intent \
+  --recipient 0x742d35Cc6634C0532925a3b844Bc9e7595f5e4a0 \
+  --amount 1.00 \
+  --purpose "reserved-compute-job"
+```
+
+**Confirm (capture) the intent:**
+```bash
+omniclaw-cli confirm-intent --intent-id <intent-id-from-above>
+```
+
+**Get intent status:**
+```bash
+omniclaw-cli get-intent --intent-id <intent-id>
+```
+
+**Cancel an intent:**
+```bash
+omniclaw-cli cancel-intent --intent-id <intent-id> --reason "no longer needed"
+```
+
+---
+
+## Network and Fee Options
+
+**Specify destination chain:**
+```bash
+omniclaw-cli pay --recipient <address> --destination-chain ethereum
+```
+
+**Set gas fee level:**
+```bash
+omniclaw-cli pay --recipient <address> --fee-level HIGH
+```
+Options: LOW, MEDIUM, HIGH
+
+**Run Trust Gate check:**
+```bash
+omniclaw-cli pay --recipient <address> --check-trust
+```
+
+---
+
+## Simulate (standalone)
+
+Use `--dry-run` on `pay` or the standalone `simulate` command:
+```bash
+omniclaw-cli simulate --recipient 0x742d35Cc6634C0532925a3b844Bc9e7595f5e4a0 --amount 0.50
+```
+
+---
+
 ## How to view your transactions
 
 ```bash
@@ -269,11 +370,20 @@ omniclaw-cli status
 # Check available balance
 omniclaw-cli balance
 
+# Get your wallet address
+omniclaw-cli address
+
+# Health check
+omniclaw-cli ping
+
 # Check if you can pay a recipient
 omniclaw-cli can-pay --recipient <address-or-url>
 
 # Simulate a payment (no charge)
 omniclaw-cli pay --recipient <url-or-address> --dry-run
+
+# Standalone simulation
+omniclaw-cli simulate --recipient <address> --amount <n>
 
 # Pay an x402 URL (handles 402 automatically)
 omniclaw-cli pay --recipient <url> --idempotency-key <unique-job-key>
@@ -294,6 +404,19 @@ omniclaw-cli pay --recipient <0xAddress> \
   --purpose <description> \
   --idempotency-key <unique-job-key>
 
+# Pay with specific chain/fee
+omniclaw-cli pay --recipient <address> --destination-chain ethereum --fee-level HIGH
+
+# Payment Intents
+omniclaw-cli create-intent --recipient <addr> --amount <n> --purpose <desc>
+omniclaw-cli confirm-intent --intent-id <id>
+omniclaw-cli get-intent --intent-id <id>
+omniclaw-cli cancel-intent --intent-id <id>
+
 # View transactions
 omniclaw-cli ledger
+
+# Configure (first time only)
+omniclaw-cli configure --server-url <url> --token <token> --wallet <alias>
+omniclaw-cli configure --show
 ```

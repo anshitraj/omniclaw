@@ -223,11 +223,11 @@ class WalletService:
         """
         target_name = f"agent-{agent_name}"
 
-        # Check if wallet set exists
-        # Note: Circle API no longer returns wallet set names, so we always create a new set.
+        # 10/10 IDEMPOTENCY: CircleClient now uses deterministic UUIDs based on names.
+        # This means create_wallet_set will return the EXISTING set if it was already created.
         wallet_set = self.create_wallet_set(name=target_name)
 
-        # Create wallet(s)
+        # Create wallet(s) - also idempotent via blockchain+set name
         if count == 1:
             wallet = self.create_wallet(wallet_set_id=wallet_set.id, blockchain=blockchain)
             return wallet_set, wallet
@@ -531,13 +531,9 @@ class WalletService:
         """
         Get existing wallet set by name or create new one.
 
-        Args:
-            name: Wallet set name
-
-        Returns:
-            Wallet set info
+        Circle V2 does not reliably return names in searches, so we use
+        idempotent creation via Circle SDK which handles name collisions.
         """
-        # Circle API no longer returns wallet set names, so we always create a new set.
         return self.create_wallet_set(name)
 
     def setup_agent_wallet(
@@ -557,13 +553,13 @@ class WalletService:
         Returns:
             Tuple of (wallet_set, wallet)
         """
-        wallet_set = self.create_wallet_set(agent_name)
-        wallet = self.create_wallet(
-            wallet_set_id=wallet_set.id,
-            blockchain=blockchain,
+        # Simply use the underlying create_agent_wallet logic for consistency
+        wallet_set, wallet_or_list = self.create_agent_wallet(
+            agent_name=agent_name, blockchain=blockchain, count=1
         )
 
-        return wallet_set, wallet
+        # We know it's a single wallet because count=1
+        return wallet_set, wallet_or_list  # type: ignore
 
     def clear_cache(self) -> None:
         """Clear the wallet cache."""

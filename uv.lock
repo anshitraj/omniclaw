@@ -2099,6 +2099,7 @@ dependencies = [
     { name = "pydantic" },
     { name = "python-dotenv" },
     { name = "redis" },
+    { name = "setuptools" },
     { name = "tenacity" },
     { name = "typer" },
     { name = "uvicorn", extra = ["standard"] },
@@ -2122,6 +2123,7 @@ dev = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "build" },
     { name = "python-dotenv" },
     { name = "uvicorn" },
 ]
@@ -2145,6 +2147,7 @@ requires-dist = [
     { name = "python-dotenv", specifier = ">=1.2.1" },
     { name = "redis", specifier = "==7.1.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.14.0" },
+    { name = "setuptools", specifier = ">=69.0.0" },
     { name = "tenacity", specifier = "==8.2.0" },
     { name = "twine", marker = "extra == 'dev'", specifier = ">=6.1.0" },
     { name = "typer", specifier = ">=0.15.0" },
@@ -2156,6 +2159,7 @@ provides-extras = ["dev"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "build", specifier = ">=1.4.0" },
     { name = "python-dotenv", specifier = ">=1.2.1" },
     { name = "uvicorn", specifier = ">=0.42.0" },
 ]

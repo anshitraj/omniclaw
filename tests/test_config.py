@@ -189,6 +189,6 @@ class TestConfig:
             entity_secret="test_secret",
         )
 
-        assert config.request_timeout == 30.0
+        assert config.request_timeout == 60.0
         assert config.transaction_poll_interval == 2.0
         assert config.transaction_poll_timeout == 120.0

@@ -66,7 +66,7 @@ async def get_current_agent(
 
 @router.get("/health", response_model=HealthResponse)
 async def health_check():
-    return HealthResponse(status="healthy")
+    return HealthResponse(status="ok")
 
 
 @router.get("/address", response_model=AddressResponse)
@@ -74,7 +74,13 @@ async def get_address(
     agent: AuthenticatedAgent = Depends(get_current_agent),
     wallet_mgr: WalletManager = Depends(get_wallet_manager),
 ):
-    address = await wallet_mgr.get_wallet_address()
+    if agent.wallet_id.startswith("pending-"):
+        raise HTTPException(
+            status_code=425,
+            detail="Wallet is currently initializing. Please try again in a few seconds.",
+        )
+
+    address = await wallet_mgr.get_wallet_address(agent.wallet_id)
     if not address:
         raise HTTPException(status_code=404, detail="Wallet not found")
 
@@ -90,7 +96,13 @@ async def get_balance(
     agent: AuthenticatedAgent = Depends(get_current_agent),
     wallet_mgr: WalletManager = Depends(get_wallet_manager),
 ):
-    balance = await wallet_mgr.get_wallet_balance()
+    if agent.wallet_id.startswith("pending-"):
+        raise HTTPException(
+            status_code=425,
+            detail="Wallet is currently initializing. Please try again in a few seconds.",
+        )
+
+    balance = await wallet_mgr.get_wallet_balance(agent.wallet_id)
     if balance is None:
         raise HTTPException(status_code=404, detail="Wallet not found")
 
@@ -108,15 +120,21 @@ async def pay(
     policy_mgr: PolicyManager = Depends(get_policy_manager),
     client: OmniClaw = Depends(get_omniclaw_client),
 ):
-    if not policy_mgr.is_valid_recipient(request.recipient):
+    if agent.wallet_id.startswith("pending-"):
+        raise HTTPException(
+            status_code=425,
+            detail="Wallet is currently initializing. Please try again in a few seconds.",
+        )
+
+    if not policy_mgr.is_valid_recipient(request.recipient, agent.wallet_id):
         raise HTTPException(status_code=400, detail="Recipient not allowed by policy")
 
     amount = Decimal(request.amount)
-    allowed, reason = policy_mgr.check_limits(amount)
+    allowed, reason = policy_mgr.check_limits(amount, agent.wallet_id)
     if not allowed:
         raise HTTPException(status_code=400, detail=reason)
 
-    requires_confirmation = policy_mgr.requires_confirmation(amount)
+    requires_confirmation = policy_mgr.requires_confirmation(amount, agent.wallet_id)
 
     try:
         result = await client.pay(
@@ -163,13 +181,13 @@ async def simulate(
     policy_mgr: PolicyManager = Depends(get_policy_manager),
     client: OmniClaw = Depends(get_omniclaw_client),
 ):
-    if not policy_mgr.is_valid_recipient(request.recipient):
+    if not policy_mgr.is_valid_recipient(request.recipient, agent.wallet_id):
         return SimulateResponse(
             would_succeed=False, route="TRANSFER", reason="Recipient not allowed by policy"
         )
 
     amount = Decimal(request.amount)
-    allowed, reason = policy_mgr.check_limits(amount)
+    allowed, reason = policy_mgr.check_limits(amount, agent.wallet_id)
     if not allowed:
         return SimulateResponse(would_succeed=False, route="TRANSFER", reason=reason)
 
@@ -228,11 +246,11 @@ async def create_intent(
     policy_mgr: PolicyManager = Depends(get_policy_manager),
     client: OmniClaw = Depends(get_omniclaw_client),
 ):
-    if not policy_mgr.is_valid_recipient(request.recipient):
+    if not policy_mgr.is_valid_recipient(request.recipient, agent.wallet_id):
         raise HTTPException(status_code=400, detail="Recipient not allowed by policy")
 
     amount = Decimal(request.amount)
-    allowed, reason = policy_mgr.check_limits(amount)
+    allowed, reason = policy_mgr.check_limits(amount, agent.wallet_id)
     if not allowed:
         raise HTTPException(status_code=400, detail=reason)
 
@@ -358,7 +376,7 @@ async def can_pay(
     agent: AuthenticatedAgent = Depends(get_current_agent),
     policy_mgr: PolicyManager = Depends(get_policy_manager),
 ):
-    is_valid = policy_mgr.is_valid_recipient(recipient)
+    is_valid = policy_mgr.is_valid_recipient(recipient, agent.wallet_id)
     if is_valid:
         return CanPayResponse(can_pay=True)
     else:
@@ -371,18 +389,26 @@ async def list_wallets(
     policy_mgr: PolicyManager = Depends(get_policy_manager),
     wallet_mgr: WalletManager = Depends(get_wallet_manager),
 ):
-    address = await wallet_mgr.get_wallet_address()
-    wallet_id = policy_mgr.get_wallet_id()
+    is_pending = agent.wallet_id.startswith("pending-")
+    address = await wallet_mgr.get_wallet_address(agent.wallet_id)
+
+    alias = agent.wallet_id.replace("pending-", "") if is_pending else "primary"
+    # Simplest is just to use the alias from the policy if we can find it
+    # but for now "primary" is a safe default for single-agent case.
+
     policy = policy_mgr.get_policy()
 
     # Send a mock policy block for the CLI display
-    policy_dict = policy.to_dict()
+    # We check for to_dict or just use empty dict
+    policy_dict = {}
+    if hasattr(policy, "to_dict"):
+        policy_dict = policy.to_dict()
 
     wallets = [
         WalletInfo(
-            alias="primary",
-            wallet_id=wallet_id or "",
-            address=address or "",
+            alias=alias,
+            wallet_id=agent.wallet_id,
+            address=address or ("INITIALIZING..." if is_pending else "NONE"),
             fund_address=address,
             policy=policy_dict,
         )

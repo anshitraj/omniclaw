@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import warnings
 
-# Suppress deprecation warnings from downstream dependencies (e.g. web3 using pkg_resources)
-warnings.filterwarnings("ignore", category=DeprecationWarning, module="pkg_resources")
+# Aggressively suppress noisy deprecation warnings from downstream dependencies (e.g. web3, circle-sdk)
+# This must happen before any third-party imports.
 warnings.filterwarnings("ignore", message=".*pkg_resources is deprecated.*")
+warnings.filterwarnings("ignore", category=DeprecationWarning)
+warnings.filterwarnings("ignore", category=UserWarning, module="web3")
 
 import base64
 import json
@@ -16,10 +18,34 @@ from typing import Any
 import httpx
 import typer
 
-app = typer.Typer(help="omniclaw-cli - CLI for AI agents to make USDC payments")
+app = typer.Typer(
+    help="omniclaw-cli - CLI for AI agents to pay for things without losing control of money"
+)
+
+
+@app.callback()
+def callback() -> None:
+    """Show banner on startup."""
+    print_banner()
+
 
 CONFIG_DIR = Path.home() / ".omniclaw"
 CONFIG_FILE = CONFIG_DIR / "config.json"
+
+BANNER = r"""
+   ____  __  __ _   _ ___ ____ _        ___        __
+  / __ \|  \/  | \ | |_ _/ ___| |      / \ \      / /
+ | |  | | |\/| |  \| || | |   | |     / _ \ \ /\ / /
+ | |__| | |  | | |\  || | |___| |___ / ___ \ V  V /
+  \____/|_|  |_|_| \_|___\____|_____/_/   \_\_/\_/
+
+  Economic Execution and Control Layer for Agentic Systems
+"""
+
+
+def print_banner():
+    """Print the OmniClaw CLI banner."""
+    typer.echo(typer.style(BANNER, fg=typer.colors.CYAN, bold=True))
 
 
 def load_config() -> dict[str, Any]:
@@ -56,9 +82,9 @@ def get_client() -> httpx.Client:
 
 @app.command()
 def configure(
-    server_url: str = typer.Option(..., "--server-url", help="OmniClaw server URL"),
-    token: str = typer.Option(..., "--token", help="Agent token"),
-    wallet: str = typer.Option(..., "--wallet", help="Wallet alias"),
+    server_url: str | None = typer.Option(None, "--server-url", help="OmniClaw server URL"),
+    token: str | None = typer.Option(None, "--token", help="Agent token"),
+    wallet: str | None = typer.Option(None, "--wallet", help="Wallet alias"),
     show: bool = typer.Option(False, "--show", help="Show current config"),
 ) -> None:
     """Configure omniclaw-cli with server details."""
@@ -69,6 +95,10 @@ def configure(
             return
         typer.echo(json.dumps(config, indent=2))
         return
+
+    if not server_url or not token or not wallet:
+        typer.echo("Error: --server-url, --token, and --wallet are required", err=True)
+        raise typer.Exit(1)
 
     config = {
         "server_url": server_url.rstrip("/"),
@@ -95,10 +125,10 @@ def address() -> dict[str, Any]:
         return data
     except httpx.HTTPStatusError as e:
         typer.echo(f"Error: {e.response.json().get('detail', str(e))}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
     except Exception as e:
         typer.echo(f"Error: {e}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 @app.command()
@@ -118,10 +148,10 @@ def balance() -> dict[str, Any]:
         except Exception:
             detail = e.response.text or str(e)
         typer.echo(f"Error: {detail}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
     except Exception as e:
         typer.echo(f"Error: {e}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 @app.command()
@@ -162,7 +192,7 @@ def pay(
 
     # If recipient is a URL, handle x402 flow
     if recipient.startswith("http"):
-        typer.echo(f"Ã°ÂÂÂ Paying for x402 service: {recipient}")
+        typer.echo(f"🚀 Paying for x402 service: {recipient}")
         payload: dict[str, Any] = {
             "url": recipient,
             "method": method,
@@ -180,16 +210,16 @@ def pay(
             data = response.json()
             if output:
                 Path(output).write_text(json.dumps(data, indent=2))
-                typer.echo(f"Ã¢ÂÂ Response saved to {output}")
+                typer.echo(f"✅ Response saved to {output}")
             else:
                 typer.echo(json.dumps(data, indent=2))
             return data
         except httpx.HTTPStatusError as e:
             typer.echo(f"Error: {e.response.json().get('detail', str(e))}", err=True)
-            raise typer.Exit(1)
+            raise typer.Exit(1) from e
         except Exception as e:
             typer.echo(f"Error: {e}", err=True)
-            raise typer.Exit(1)
+            raise typer.Exit(1) from e
 
     # Standard direct transfer
     if not amount:
@@ -221,10 +251,10 @@ def pay(
         return data
     except httpx.HTTPStatusError as e:
         typer.echo(f"Error: {e.response.json().get('detail', str(e))}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
     except Exception as e:
         typer.echo(f"Error: {e}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 @app.command()
@@ -267,10 +297,10 @@ def simulate(
         return data
     except httpx.HTTPStatusError as e:
         typer.echo(f"Error: {e.response.json().get('detail', str(e))}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
     except Exception as e:
         typer.echo(f"Error: {e}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 @app.command()
@@ -296,10 +326,10 @@ def list_tx(
         return data
     except httpx.HTTPStatusError as e:
         typer.echo(f"Error: {e.response.json().get('detail', str(e))}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
     except Exception as e:
         typer.echo(f"Error: {e}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 @app.command()
@@ -348,10 +378,10 @@ def create_intent(
         return data
     except httpx.HTTPStatusError as e:
         typer.echo(f"Error: {e.response.json().get('detail', str(e))}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
     except Exception as e:
         typer.echo(f"Error: {e}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 @app.command()
@@ -369,10 +399,10 @@ def confirm_intent(
         return data
     except httpx.HTTPStatusError as e:
         typer.echo(f"Error: {e.response.json().get('detail', str(e))}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
     except Exception as e:
         typer.echo(f"Error: {e}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 @app.command()
@@ -390,10 +420,10 @@ def get_intent(
         return data
     except httpx.HTTPStatusError as e:
         typer.echo(f"Error: {e.response.json().get('detail', str(e))}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
     except Exception as e:
         typer.echo(f"Error: {e}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 @app.command()
@@ -414,10 +444,10 @@ def cancel_intent(
         return data
     except httpx.HTTPStatusError as e:
         typer.echo(f"Error: {e.response.json().get('detail', str(e))}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
     except Exception as e:
         typer.echo(f"Error: {e}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 @app.command()
@@ -435,10 +465,10 @@ def can_pay(
         return data
     except httpx.HTTPStatusError as e:
         typer.echo(f"Error: {e.response.json().get('detail', str(e))}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
     except Exception as e:
         typer.echo(f"Error: {e}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 @app.command()
@@ -513,9 +543,9 @@ def serve(
         except Exception as e:
             return JSONResponse(status_code=500, content={"detail": f"Execution failed: {e}"})
 
-    typer.echo(f"Ã°ÂÂÂ OmniClaw Service exposed at http://localhost:{port}{endpoint}")
-    typer.echo(f"Ã°ÂÂÂ° Price: ${price} USDC")
-    typer.echo(f"Ã°ÂÂÂ Ã¯Â¸Â Exec: {exec_cmd}")
+    typer.echo(f"🌐 OmniClaw Service exposed at http://localhost:{port}{endpoint}")
+    typer.echo(f"💰 Price: ${price} USDC")
+    typer.echo(f"🛠️ Exec: {exec_cmd}")
 
     uvicorn.run(server_app, host="0.0.0.0", port=port)
 
@@ -546,32 +576,37 @@ def status() -> dict[str, Any]:
         typer.echo(f"Wallet:    {status_data['Wallet']}")
         typer.echo(f"Balance:   {status_data['Balance']}")
         typer.echo(f"Guards:    {status_data['Guards']}")
-        typer.echo(f"Circle:    {status_data['Circle']} Ã¢ÂÂ")
-        typer.echo(f"Circuit:   {status_data['Circuit']} Ã¢ÂÂ")
+        circle_icon = "✅" if status_data["Circle"] == "connected" else "❌"
+        circuit_icon = "✅" if status_data["Circuit"] == "CLOSED" else "⚠️"
+        typer.echo(f"Circle:    {status_data['Circle']} {circle_icon}")
+        typer.echo(f"Circuit:   {status_data['Circuit']} {circuit_icon}")
 
         return status_data
     except Exception as e:
         typer.echo(f"Error fetching status: {e}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 @app.command()
 def ping() -> dict[str, Any]:
     """Health check."""
+    from omniclaw import __version__
+
     client = get_client()
 
     try:
         response = client.get("/api/v1/health")
         response.raise_for_status()
         data = response.json()
+        data["version"] = __version__
         typer.echo(json.dumps(data, indent=2))
         return data
     except httpx.HTTPStatusError as e:
         typer.echo(f"Error: {e.response.json().get('detail', str(e))}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
     except Exception as e:
         typer.echo(f"Error: {e}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 def main() -> int:

@@ -1,3 +1,4 @@
+import os
 import sys
 from unittest.mock import AsyncMock, MagicMock
 
@@ -8,6 +9,17 @@ if "circle" not in sys.modules:
     sys.modules["circle"] = MagicMock()
     sys.modules["circle.web3"] = MagicMock()
     sys.modules["circle.web3.developer_controlled_wallets"] = MagicMock()
+
+
+@pytest.fixture(autouse=True)
+def force_test_env(monkeypatch):
+    """Ensure all tests use isolated environment to avoid .env leakage."""
+    monkeypatch.setenv("OMNICLAW_STORAGE_BACKEND", "memory")
+    # Also set some safe defaults for other sensitive env vars
+    if not os.getenv("CIRCLE_API_KEY"):
+        monkeypatch.setenv("CIRCLE_API_KEY", "test_api_key_placeholder")
+    if not os.getenv("ENTITY_SECRET"):
+        monkeypatch.setenv("ENTITY_SECRET", "a" * 64)
 
 
 @pytest.fixture(autouse=True)

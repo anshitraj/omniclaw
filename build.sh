@@ -21,7 +21,7 @@ echo "Running release-oriented SDK checks..."
 uv run pytest tests/test_setup.py tests/test_payment_intents.py tests/test_client.py tests/test_webhook_verification.py
 
 echo "Building sdist and wheel..."
-uv run python -m build
+uv run python3 -m build
 
 echo "Validating package metadata..."
 uv run twine check dist/*

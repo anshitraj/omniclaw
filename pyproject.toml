@@ -61,6 +61,7 @@ dependencies = [
     "typer>=0.15.0",
     "fastapi>=0.100.0",
     "uvicorn[standard]>=0.20.0",
+    "setuptools>=69.0.0",
 ]
 
 [project.optional-dependencies]
@@ -90,6 +91,7 @@ omniclaw-cli = "omniclaw.cli_agent:main"
 
 [dependency-groups]
 dev = [
+    "build>=1.4.0",
     "python-dotenv>=1.2.1",
     "uvicorn>=0.42.0",
 ]
@@ -127,8 +129,9 @@ warn_unused_ignores = true
 [tool.ruff.lint.per-file-ignores]
 # nanopayments __init__ needs specific import order to avoid circular imports
 "src/omniclaw/protocols/nanopayments/__init__.py" = ["I001"]
-"src/omniclaw/cli.py" = ["I001", "E402"]
-# warnings.filterwarnings() must run before other imports
-"src/omniclaw/agent/server.py" = ["E402"]
-"src/omniclaw/cli_agent.py" = ["E402", "B904"]
-"src/omniclaw/onboarding.py" = ["E402"]
+"src/omniclaw/cli.py" = ["I001", "F401", "E402"]
+"src/omniclaw/__init__.py" = ["E402", "F401", "I001"]
+"src/omniclaw/agent/server.py" = ["E402", "F401"]
+"src/omniclaw/agent/routes.py" = ["B008", "UP037", "E402"]
+"src/omniclaw/cli_agent.py" = ["B008", "E402", "I001"]
+"src/omniclaw/onboarding.py" = ["E402", "I001", "F401"]

@@ -33,6 +33,7 @@ def mock_env():
         {
             "CIRCLE_API_KEY": "test_api_key",
             "ENTITY_SECRET": "test_secret",
+            "OMNICLAW_STORAGE_BACKEND": "memory",
         },
     ):
         yield

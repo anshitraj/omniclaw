@@ -36,7 +36,10 @@ def mock_config() -> Config:
 @pytest.fixture
 def mock_circle_client() -> MagicMock:
     """Create a mock CircleClient."""
-    return MagicMock()
+    mock = MagicMock()
+    # By default, don't find anything by name to force creation paths in tests
+    mock.find_wallet_set_by_name.return_value = None
+    return mock
 
 
 @pytest.fixture
@@ -482,6 +485,7 @@ class TestUtilityMethods:
         sample_wallet_set: WalletSetInfo,
     ) -> None:
         """Test get_or_create always creates new (Circle API no longer returns names)."""
+        mock_circle_client.find_wallet_set_by_name.return_value = sample_wallet_set
         mock_circle_client.create_wallet_set.return_value = sample_wallet_set
 
         result = wallet_service.get_or_create_default_wallet_set("Test Wallet Set")

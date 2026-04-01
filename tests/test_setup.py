@@ -149,7 +149,7 @@ class TestManagedCredentials:
             env_path = Path(tmpdir) / ".env"
             xdg_config_home = Path(tmpdir) / "xdg"
 
-            with patch.dict(os.environ, {"XDG_CONFIG_HOME": str(xdg_config_home)}, clear=False):
+            with patch.dict(os.environ, {"XDG_CONFIG_HOME": str(xdg_config_home)}, clear=True):
                 create_env_file(
                     api_key="TEST_API_KEY",
                     entity_secret="a" * 64,
@@ -162,7 +162,7 @@ class TestManagedCredentials:
         with tempfile.TemporaryDirectory() as tmpdir:
             xdg_config_home = Path(tmpdir) / "xdg"
 
-            with patch.dict(os.environ, {"XDG_CONFIG_HOME": str(xdg_config_home)}, clear=False):
+            with patch.dict(os.environ, {"XDG_CONFIG_HOME": str(xdg_config_home)}, clear=True):
                 store_managed_credentials(
                     "TEST_API_KEY",
                     "b" * 64,
@@ -181,7 +181,7 @@ class TestManagedCredentials:
                     "XDG_CONFIG_HOME": str(xdg_config_home),
                     "CIRCLE_API_KEY": "TEST_API_KEY",
                 },
-                clear=False,
+                clear=True,
             ):
                 store_managed_credentials(
                     "TEST_API_KEY",
@@ -199,7 +199,7 @@ class TestManagedCredentials:
             with patch.dict(
                 os.environ,
                 {"XDG_CONFIG_HOME": str(xdg_config_home), "CIRCLE_API_KEY": "TEST_API_KEY"},
-                clear=False,
+                clear=True,
             ):
                 print_doctor_status(as_json=True)
                 output = capsys.readouterr().out

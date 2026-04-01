@@ -311,8 +311,9 @@ class TestExternalErrorHandling:
     def test_config_error_on_missing_key(self):
         """ConfigurationError when API key missing."""
         # When no API key, Config.from_env raises ValueError
-        with pytest.raises(ValueError):
-            OmniClaw()
+        with patch.dict(os.environ, {}, clear=True):
+            with pytest.raises(ValueError):
+                OmniClaw()
 
     def test_client_has_wallet_methods(self, external_client):
         """Client has wallet methods."""

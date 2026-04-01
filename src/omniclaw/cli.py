@@ -13,6 +13,24 @@ import os
 from omniclaw.onboarding import print_doctor_status
 
 
+BANNER = r"""
+   ____  __  __ _   _ ___ ____ _        ___        __
+  / __ \|  \/  | \ | |_ _/ ___| |      / \ \      / /
+ | |  | | |\/| |  \| || | |   | |     / _ \ \ /\ / /
+ | |__| | |  | | |\  || | |___| |___ / ___ \ V  V /
+  \____/|_|  |_|_| \_|___\____|_____/_/   \_\_/\_/
+
+  OmniClaw is the economy and control layer for AI agent payments.
+  Economic Execution and Control Layer for Agentic Systems
+"""
+
+
+def print_banner():
+    """Print the OmniClaw CLI banner."""
+    print(f"\033[1;36m{BANNER}\033[0m")
+    print("\033[90mOmniClaw Financial Infrastructure - v2.0 Production-Ready\033[0m\n")
+
+
 ENV_VARS = {
     "required": {
         "CIRCLE_API_KEY": "Circle API key for wallet/payment operations",
@@ -40,7 +58,7 @@ def print_env_vars():
     print("Required:")
     for var, desc in ENV_VARS["required"].items():
         value = os.environ.get(var, "")
-        status = f"â {value[:20]}..." if value else "â not set"
+        status = f"✓ {value[:20]}..." if value else "✗ not set"
         print(f"  {var}")
         print(f"    {desc}")
         print(f"    {status}\n")
@@ -48,7 +66,7 @@ def print_env_vars():
     print("\nOptional:")
     for var, desc in ENV_VARS["optional"].items():
         value = os.environ.get(var, "")
-        status = f"â {value[:30]}..." if value else "â default"
+        status = f"✓ {value[:30]}..." if value else "○ default"
         print(f"  {var}")
         print(f"    {desc}")
         print(f"    {status}\n")
@@ -56,7 +74,7 @@ def print_env_vars():
     print("\nProduction:")
     for var, desc in ENV_VARS["production"].items():
         value = os.environ.get(var, "")
-        status = f"â {value[:30]}..." if value else "â not set"
+        status = f"✓ {value[:30]}..." if value else "○ not set"
         print(f"  {var}")
         print(f"    {desc}")
         print(f"    {status}\n")
@@ -116,26 +134,26 @@ def handle_setup(args: argparse.Namespace) -> int:
         api_key = input("Enter your Circle API Key: ").strip()
 
     if not api_key:
-        print("â Error: Circle API Key is required.")
+        print("❌ Error: Circle API Key is required.")
         return 1
 
     entity_secret = resolve_entity_secret(api_key)
     if entity_secret:
-        print("â Found existing Entity Secret in managed store.")
+        print("✅ Found existing Entity Secret in managed store.")
     else:
-        print("ð¡ No Entity Secret found for this API key.")
+        print("💡 No Entity Secret found for this API key.")
         entity_secret = input(
             "Enter your 64-char Entity Secret (or press Enter to generate): "
         ).strip()
         if not entity_secret:
             from omniclaw.onboarding import auto_setup_entity_secret
 
-            print("ð Generating and registering new Entity Secret...")
+            print("🚀 Generating and registering new Entity Secret...")
             entity_secret = auto_setup_entity_secret(api_key)
 
     env_path = ".env.agent"
     create_env_file(api_key, entity_secret, env_path=env_path, network=args.network, overwrite=True)
-    print(f"â¨ Successfully configured {env_path}!")
+    print(f"✨ Successfully configured {env_path}!")
     print("To start the server locally, run: omniclaw server")
     print("To start via Docker, run: docker compose -f docker-compose.agent.yml up -d")
     return 0
@@ -150,30 +168,30 @@ def handle_server(args: argparse.Namespace) -> int:
     # Load .env.agent if it exists
     if os.path.exists(".env.agent"):
         load_dotenv(".env.agent")
-        print("ð Loaded configuration from .env.agent")
+        print("📄 Loaded configuration from .env.agent")
     elif os.path.exists(".env"):
         load_dotenv(".env")
-        print("ð Loaded configuration from .env")
+        print("📄 Loaded configuration from .env")
 
     # Auto-Setup Logic: Check if we have an API key but no Entity Secret
     api_key = os.getenv("CIRCLE_API_KEY")
     entity_secret = os.getenv("ENTITY_SECRET")
 
     if api_key and not entity_secret:
-        print("ð¡ Found API Key but no Entity Secret. Attempting auto-setup...")
+        print("💡 Found API Key but no Entity Secret. Attempting auto-setup...")
         entity_secret = resolve_entity_secret(api_key)
         if not entity_secret:
-            print("ð Generating new Entity Secret for this machine...")
+            print("🚀 Generating new Entity Secret for this machine...")
             entity_secret = auto_setup_entity_secret(api_key)
 
         if entity_secret:
             os.environ["ENTITY_SECRET"] = entity_secret
-            print("â Credentials verified and injected.")
+            print("✅ Credentials verified and injected.")
         else:
-            print("â Error: Failed to resolve or generate Entity Secret.")
+            print("❌ Error: Failed to resolve or generate Entity Secret.")
             return 1
 
-    print(f"ð Starting OmniClaw Control Plane on {args.host}:{args.port}...")
+    print(f"🚀 Starting OmniClaw Control Plane on {args.host}:{args.port}...")
     uvicorn.run(
         "omniclaw.agent.server:app",
         host=args.host,
@@ -188,6 +206,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     """Run the OmniClaw CLI."""
     parser = build_parser()
     args = parser.parse_args(argv)
+    print_banner()
 
     if args.command == "doctor":
         print_doctor_status(

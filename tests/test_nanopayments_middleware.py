@@ -119,6 +119,7 @@ def _make_client() -> MagicMock:
 class TestGatewayMiddleware:
     """Tests for GatewayMiddleware 402 response structure."""
 
+    @pytest.mark.asyncio
     async def test_402_body_has_correct_x402_version(self):
         middleware = GatewayMiddleware(
             seller_address="0x" + "a" * 40,
@@ -138,7 +139,7 @@ class TestGatewayMiddleware:
         for accept in body["accepts"]:
             assert accept["scheme"] == "exact"
 
-    async def test_402_body_max_timeout_is_345600(self):
+    async def test_402_body_has_max_timeout(self):
         middleware = GatewayMiddleware(
             seller_address="0x" + "a" * 40,
             nanopayment_client=_make_client(),
