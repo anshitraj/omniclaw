@@ -1,0 +1,18 @@
+{
+  "id": "hello-world",
+  "name": "Hello World",
+  "version": "1.0.0",
+  "description": "A minimal example skill demonstrating the OmniClaw installable skills format. Safe to explore, delete, or copy as a template.",
+  "entry_prompt": "prompt.md",
+  "inputs": [
+    {
+      "name": "target",
+      "type": "string",
+      "description": "The name of who (or what) to greet.",
+      "required": false
+    }
+  ],
+  "permissions": [],
+  "install_scope": "workspace",
+  "enabled_by_default": true
+}
