@@ -1,3 +1,18 @@
+---
+name: omniClaw
+description: Secure payment execution for AI agents with ERC-8004 identity, nanopayments, and policy-controlled wallets.
+metadata:
+  openclaw:
+    requires:
+      env:
+        - OMNICLAW_PRIVATE_KEY
+        - OMNICLAW_RPC_URL
+        - CIRCLE_API_KEY
+      bins:
+        - python
+    primaryEnv: OMNICLAW_PRIVATE_KEY
+---
+
 # OmniClaw Agent Wallet Skill
 
 ## What This Is
@@ -43,6 +58,25 @@ When you **withdraw**, USDC moves from Gateway → your Circle wallet.
 - **API Billing**: Handle subscriptions and per-call payments for premium API access
 - **Selling Services**: Expose your endpoints behind x402 payment gates to earn USDC
 - **Escrow & Settlement**: Settle debts securely via the x402 protocol
+
+## ERC-8004 Identity (Optional)
+
+Your owner can register you on-chain for identity verification:
+
+```bash
+# Check/ensure identity is registered
+agent_id = await client.ensure_identity()
+
+# Submit feedback to rate sellers after payment
+await client.submit_feedback(
+    agent_id=seller_agent_id,
+    value=85,  # positive rating
+    tag1="helpful",
+    tag2="fast"
+)
+```
+
+This builds your on-chain reputation. Sellers can verify buyers before accepting payments.
 
 ## Quick Start
 Agent runtimes should set environment variables (no interactive setup required):

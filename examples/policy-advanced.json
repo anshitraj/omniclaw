@@ -1,15 +1,16 @@
 {
   "version": "2.0",
   "tokens": {
-    "buyer-agent": {
+    "seller-agent-token": {
       "wallet_alias": "primary",
       "active": true,
-      "label": "Buyer Agent - LLM Processor"
+      "label": "seller Agent"
     }
   },
   "wallets": {
     "primary": {
       "name": "Primary Wallet",
+
       "limits": {
         "daily_max": "1000.00",
         "hourly_max": "200.00",
@@ -21,42 +22,11 @@
         "per_hour": 100
       },
       "recipients": {
-        "mode": "whitelist",
-        "addresses": [
-          "0xSeller1Address...",
-          "0xSeller2Address..."
-        ],
-        "domains": [
-          "api.service-a.com",
-          "api.service-b.com"
-        ]
+        "mode": "allow_all",
+        "addresses": [],
+        "domains": []
       },
-      "confirm_threshold": "50.00",
-      "time_restrictions": {
-        "allowed_days": [1, 2, 3, 4, 5],
-        "allowed_hours": {
-          "start": "09:00",
-          "end": "18:00"
-        },
-        "timezone": "UTC"
-      },
-      "ip_restrictions": {
-        "allowed_ips": ["10.0.0.0/8", "192.168.1.0/24"]
-      },
-      "categories": {
-        "allowed_categories": ["compute", "api", "storage"]
-      },
-      "networks": {
-        "allowed_networks": ["eip155:11155111", "eip155:84532"]
-      },
-      "purpose": {
-        "pattern": "^(invoice|subscription|api-call)-[a-zA-Z0-9]+$",
-        "required_tags": ["billing"]
-      },
-      "trust": {
-        "min_trust_score": 0.7,
-        "require_trust_verified": false
-      }
+      "confirm_threshold": "50.00"
     }
   }
 }

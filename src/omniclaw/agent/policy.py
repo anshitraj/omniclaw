@@ -289,27 +289,48 @@ class Policy:
 
     def to_dict(self) -> dict:
         """Convert policy to dict for saving."""
-        return {
+        result = {
             "version": self.version,
             "tokens": self.tokens,
             "wallets": self.wallets,
-            "limits": {
+        }
+
+        if self.limits and any(
+            [
+                self.limits.daily_max,
+                self.limits.hourly_max,
+                self.limits.per_tx_max,
+                self.limits.per_tx_min,
+            ]
+        ):
+            result["limits"] = {
                 "daily_max": str(self.limits.daily_max) if self.limits.daily_max else None,
                 "hourly_max": str(self.limits.hourly_max) if self.limits.hourly_max else None,
                 "per_tx_max": str(self.limits.per_tx_max) if self.limits.per_tx_max else None,
                 "per_tx_min": str(self.limits.per_tx_min) if self.limits.per_tx_min else None,
-            },
-            "rate_limits": {
+            }
+
+        if self.rate_limits and any([self.rate_limits.per_minute, self.rate_limits.per_hour]):
+            result["rate_limits"] = {
                 "per_minute": self.rate_limits.per_minute,
                 "per_hour": self.rate_limits.per_hour,
-            },
-            "recipients": {
+            }
+
+        if self.recipients and (
+            self.recipients.mode != "allow_all"
+            or self.recipients.addresses
+            or self.recipients.domains
+        ):
+            result["recipients"] = {
                 "mode": self.recipients.mode,
                 "addresses": self.recipients.addresses,
                 "domains": self.recipients.domains,
-            },
-            "confirm_threshold": str(self.confirm_threshold) if self.confirm_threshold else None,
-        }
+            }
+
+        if self.confirm_threshold:
+            result["confirm_threshold"] = str(self.confirm_threshold)
+
+        return result
 
     @classmethod
     def from_dict(cls, data: dict | None) -> Policy:

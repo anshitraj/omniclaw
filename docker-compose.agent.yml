@@ -14,15 +14,18 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.agent
-    command: uv run omniclaw server --host 0.0.0.0 --port 9090
+    command: uv run uvicorn omniclaw.agent.server:app --host 0.0.0.0 --port 9090
     env_file: .env
     environment:
       - OMNICLAW_REDIS_URL=redis://redis:6379/0
       - OMNICLAW_AGENT_POLICY_PATH=/config/policy.json
-      - OMNICLAW_AGENT_TOKEN=payment-agent-token
+      - OMNICLAW_AGENT_TOKEN=seller-agent-token
       - OMNICLAW_LOG_LEVEL=INFO
+      - OMNICLAW_POLICY_RELOAD_INTERVAL=0
+      - OMNICLAW_NANOPAYMENTS_ENABLED=true
+      - OMNICLAW_PRIVATE_KEY=${OMNICLAW_PRIVATE_KEY}
     volumes:
-      - ./examples/agent/policy.json:/config/policy.json:ro
+      - ./examples/policy-advanced.json:/config/policy.json
     ports:
       - "9090:9090"
     depends_on:
