@@ -51,8 +51,8 @@ class WalletConfigModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str | None = None
-    wallet_id: str | None = None  # auto-generated if missing
-    address: str | None = None  # auto-filled if missing
+    wallet_id: str | None = None
+    address: str | None = None
     limits: LimitsModel | None = None
     rate_limits: RateLimitsModel | None = None
     recipients: RecipientConfigModel | None = None
