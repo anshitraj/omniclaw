@@ -2,7 +2,12 @@
 
 Thank you for contributing to OmniClaw.
 
-This repository contains the Python SDK as the primary product surface, along with supporting docs, examples, and an optional MCP server.
+> **New here?** Read the full **[Contributor Guide](docs/CONTRIBUTOR_GUIDE.md)** first.
+> It covers the repo map, local setup, Circle sandbox credentials, Redis,
+> how to pick an issue, and how to open a good PR.
+
+This file is a short reference summary. The detailed guide lives in
+[`docs/CONTRIBUTOR_GUIDE.md`](docs/CONTRIBUTOR_GUIDE.md).
 
 ## Project Areas
 
@@ -12,7 +17,9 @@ Main contribution areas:
 - SDK tests in `tests/`
 - docs in `docs/`
 - examples in `examples/`
-- MCP server in `mcp-server/`
+- MCP server in `mcp_server/`
+- TypeScript / npm SDK in `npm/omniclaw/` (PR open)
+- Installable skills in `src/omniclaw/skills/` and `.agents/skills/`
 
 ## Local Setup
 
