@@ -1,36 +1,10 @@
-services:
-  redis:
-    image: redis:7-alpine
-    command: redis-server --appendonly yes --appendfsync everysec
-    volumes:
-      - redis-data:/data
-    healthcheck:
-      test: [ "CMD", "redis-cli", "ping" ]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-
-  omniclaw-agent:
-    build:
-      context: .
-      dockerfile: Dockerfile.agent
-    command: uv run uvicorn omniclaw.agent.server:app --host 0.0.0.0 --port 9090
-    env_file: .env
-    environment:
-      - OMNICLAW_REDIS_URL=redis://redis:6379/0
-      - OMNICLAW_AGENT_POLICY_PATH=/config/policy.json
-      - OMNICLAW_AGENT_TOKEN=buyer-agent-token
-      - OMNICLAW_LOG_LEVEL=INFO
-      - OMNICLAW_POLICY_RELOAD_INTERVAL=0
-      - OMNICLAW_NANOPAYMENTS_ENABLED=true
-      - OMNICLAW_PRIVATE_KEY=${OMNICLAW_PRIVATE_KEY}
-    volumes:
-      - ./examples/policy-advanced.json:/config/policy.json
-    ports:
-      - "9090:9090"
-    depends_on:
-      redis:
-        condition: service_healthy
-
-volumes:
-  redis-data:
+# Canonical root-level stacks now live here:
+#
+# Buyer / payment agent:
+#   docker compose -f docker-compose.payment-agent.yml up -d --build
+#
+# Seller agent:
+#   docker compose -f docker-compose.seller-agent.yml up -d --build
+#
+# This file is kept as a compatibility stub so existing references do not
+# silently point to stale configuration.

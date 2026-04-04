@@ -1,15 +1,15 @@
 {
   "version": "2.0",
   "tokens": {
-    "buyer-agent-token": {
-      "wallet_alias": "buyer-wallet",
+    "payment-agent-token": {
+      "wallet_alias": "payment-agent",
       "active": true,
-      "label": "Buyer Agent"
+      "label": "Payment Agent"
     }
   },
   "wallets": {
-    "buyer-wallet": {
-      "name": "Buyer Wallet",
+    "payment-agent": {
+      "name": "Payment Agent",
       "wallet_id": "fe1409e8-3948-56eb-b847-8c0a72c1b1d4",
       "address": "0xcf9baaf6bb37677488c041fdb9166708407ebb3b",
       "limits": {
@@ -20,9 +20,15 @@
       },
       "rate_limits": null,
       "recipients": {
-        "mode": "allow_all",
-        "addresses": [],
-        "domains": []
+        "mode": "whitelist",
+        "addresses": [
+          "0x5a4e248fa08c37b15ea0efdfdf336e92317d5243"
+        ],
+        "domains": [
+          "api.stripe.com",
+          "localhost",
+          "127.0.0.1"
+        ]
       },
       "confirm_threshold": null
     }
@@ -38,9 +44,15 @@
     "per_hour": null
   },
   "recipients": {
-    "mode": "allow_all",
-    "addresses": [],
-    "domains": []
+    "mode": "whitelist",
+    "addresses": [
+      "0x5a4e248fa08c37b15ea0efdfdf336e92317d5243"
+    ],
+    "domains": [
+      "api.stripe.com",
+      "localhost",
+      "127.0.0.1"
+    ]
   },
   "confirm_threshold": null
 }

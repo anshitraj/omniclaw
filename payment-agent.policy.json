@@ -10,6 +10,8 @@
   "wallets": {
     "payment-agent": {
       "name": "Payment Agent",
+      "wallet_id": "2c9bf657-c70e-5d33-873e-08f9b3fcb9c9",
+      "address": "0x1c3c4c77088494fbc3f9ce1e87bfd7b4cfec0e18",
       "limits": {
         "daily_max": "25.00",
         "hourly_max": "10.00",

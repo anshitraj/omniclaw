@@ -1,15 +1,15 @@
 {
   "version": "2.0",
   "tokens": {
-    "buyer-agent-token": {
-      "wallet_alias": "primary",
+    "payment-agent-token": {
+      "wallet_alias": "payment-agent",
       "active": true,
-      "label": "Buyer Agent"
+      "label": "Payment Agent"
     }
   },
   "wallets": {
-    "primary": {
-      "name": "Primary Wallet",
+    "payment-agent": {
+      "name": "Payment Agent",
       "wallet_id": "82e93f7f-ad08-5436-b876-d856f6fd36b4",
       "address": "0x1cb6540be09f4fc41f8d3aab15dfb136e274a9b3",
       "limits": {
@@ -23,9 +23,15 @@
         "per_hour": 100
       },
       "recipients": {
-        "mode": "allow_all",
-        "addresses": [],
-        "domains": []
+        "mode": "whitelist",
+        "addresses": [
+          "0x5a4e248fa08c37b15ea0efdfdf336e92317d5243"
+        ],
+        "domains": [
+          "api.stripe.com",
+          "localhost",
+          "127.0.0.1"
+        ]
       },
       "confirm_threshold": "50.00"
     }

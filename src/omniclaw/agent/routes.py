@@ -84,6 +84,7 @@ async def health_check():
 @router.get("/address", response_model=AddressResponse)
 async def get_address(
     agent: AuthenticatedAgent = Depends(get_current_agent),
+    policy_mgr: PolicyManager = Depends(get_policy_manager),
     wallet_mgr: WalletManager = Depends(get_wallet_manager),
     client: OmniClaw = Depends(get_omniclaw_client),
 ):
@@ -100,9 +101,12 @@ async def get_address(
     if not address:
         raise HTTPException(status_code=404, detail="Wallet not found")
 
+    wallet_cfg = policy_mgr.get_wallet_config(agent.wallet_id)
+    alias = wallet_cfg.get("alias") or agent.wallet_id.replace("pending-", "")
+
     return AddressResponse(
         wallet_id=agent.wallet_id,
-        alias="primary",
+        alias=alias,
         address=address,
         eoa_address=eoa_address,
         circle_wallet_address=circle_address,
@@ -880,9 +884,8 @@ async def list_wallets(
     is_pending = agent.wallet_id.startswith("pending-")
     address = await wallet_mgr.get_wallet_address(agent.wallet_id)
 
-    alias = agent.wallet_id.replace("pending-", "") if is_pending else "primary"
-    # Simplest is just to use the alias from the policy if we can find it
-    # but for now "primary" is a safe default for single-agent case.
+    wallet_cfg = policy_mgr.get_wallet_config(agent.wallet_id)
+    alias = wallet_cfg.get("alias") or agent.wallet_id.replace("pending-", "")
 
     policy = policy_mgr.get_policy()
 
