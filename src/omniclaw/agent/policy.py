@@ -570,7 +570,9 @@ class WalletManager:
         # PHASE 1: Pre-populate token map with placeholder
         for alias, tokens in alias_to_tokens.items():
             for token in tokens:
-                self._policy.set_mapping(token, f"pending-{alias}", wallet_map.get(alias, {}))
+                cfg = dict(wallet_map.get(alias, {}))
+                cfg.setdefault("alias", alias)
+                self._policy.set_mapping(token, f"pending-{alias}", cfg)
 
         changed = False
         results: dict[str, str] = {}
@@ -628,7 +630,9 @@ class WalletManager:
             changed = True
             # Map all tokens sharing this alias
             for token in alias_to_tokens.get(alias, []):
-                self._policy.set_mapping(token, wallet_id, wallet_map.get(alias, {}))
+                cfg = dict(wallet_map.get(alias, {}))
+                cfg.setdefault("alias", alias)
+                self._policy.set_mapping(token, wallet_id, cfg)
                 results[token] = wallet_id
             self._logger.info(f"Initialized wallet '{wallet_id}' for alias '{alias}'")
 

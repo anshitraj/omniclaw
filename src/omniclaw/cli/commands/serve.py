@@ -43,6 +43,15 @@ def serve(
         typer.echo("Error: FastAPI not installed. Run: pip install fastapi", err=True)
         raise typer.Exit(1)
 
+    circle_api_key = os.environ.get("CIRCLE_API_KEY", "").strip()
+    if not circle_api_key:
+        typer.echo(
+            "Error: CIRCLE_API_KEY is required for omniclaw-cli serve. "
+            "Start serve in a shell/container that has the seller Circle credentials.",
+            err=True,
+        )
+        raise typer.Exit(1)
+
     server_app = FastAPI(title="OmniClaw x402 Payment Gate")
     ctrl_client = get_client()
 
@@ -76,7 +85,6 @@ def serve(
             raise RuntimeError("Could not resolve seller address from Financial Policy Engine")
 
         # Initialize Circle nanopayment client
-        circle_api_key = os.environ.get("CIRCLE_API_KEY", "")
         nano_client = NanopaymentClient(api_key=circle_api_key)
 
         # Build production middleware
