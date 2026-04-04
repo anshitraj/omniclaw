@@ -18,7 +18,7 @@ Where Stripe helps merchants accept human payments, OmniClaw governs autonomous 
 
 **OmniClaw solves this** by separating:
 1. **Financial Policy Engine** (owner runs) - holds private keys, enforces policy
-2. **Execution Layer** (agent uses) - thin CLI that only does what policy allows
+2. **Zero-Trust Execution Layer** (agent uses) - constrained CLI that only does what policy allows
 
 The agent **never touches the private key**. It only talks to the CLI. The owner decides what the agent can do via policy.json.
 
@@ -36,7 +36,7 @@ The agent **never touches the private key**. It only talks to the CLI. The owner
 │                                                                     │
 │   ┌─────────────────────────────┐                ┌─────────────────────┐   │
 │   │  Financial Policy Engine   │                │     OmniClaw CLI   │   │
-│   │  (uvicorn server)          │◄──────────────►│  (thin client)     │   │
+│   │  (uvicorn server)          │◄──────────────►│ (zero-trust exec)  │   │
 │   │                            │   HTTPS        │                    │   │
 │   │  - Holds private key       │                │  - pay             │   │
 │   │  - Enforces policy         │                │  - deposit         │   │
@@ -60,7 +60,7 @@ The agent **never touches the private key**. It only talks to the CLI. The owner
 | Component | Who Runs It | What It Does |
 |-----------|-------------|--------------|
 | **Financial Policy Engine** | Owner/human | Holds private key, enforces policy, signs transactions |
-| **CLI** (agent uses) | Agent | Thin client - sends requests, gets responses. Cannot bypass policy |
+| **CLI** (agent uses) | Agent | Zero-trust execution layer - constrained command surface, cannot bypass policy |
 
 ---
 
@@ -244,7 +244,7 @@ This opens `http://localhost:8000/api/data` that requires USDC payment to access
 
 | Command | Description | Example |
 |---------|-------------|---------|
-| `configure` | Set server URL, token, wallet | `configure --server-url http://localhost:8080 --token mytoken --wallet primary` |
+| `configure` | Set Financial Policy Engine URL, token, wallet | `configure --server-url http://localhost:8080 --token mytoken --wallet primary` |
 | `address` | Get wallet address | `address` |
 | `balance` | Get wallet balance | `balance` |
 | `balance-detail` | Detailed balance (EOA, Gateway, Circle) | `balance-detail` |
@@ -305,7 +305,7 @@ For full policy options, see **[docs/POLICY_REFERENCE.md](docs/POLICY_REFERENCE.
 | `OMNICLAW_ENV` | No | Set to "production" for mainnet |
 | `OMNICLAW_RPC_URL` | No | RPC endpoint for on-chain ops |
 | `CIRCLE_API_KEY` | Yes | Circle API key |
-| `OMNICLAW_SERVER_URL` | No | CLI server URL (for configure) |
+| `OMNICLAW_SERVER_URL` | No | Financial Policy Engine URL for the zero-trust CLI |
 
 ---
 

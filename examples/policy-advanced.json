@@ -1,16 +1,17 @@
 {
   "version": "2.0",
   "tokens": {
-    "seller-agent-token": {
+    "buyer-agent-token": {
       "wallet_alias": "primary",
       "active": true,
-      "label": "seller Agent"
+      "label": "Buyer Agent"
     }
   },
   "wallets": {
     "primary": {
       "name": "Primary Wallet",
-
+      "wallet_id": "82e93f7f-ad08-5436-b876-d856f6fd36b4",
+      "address": "0x1cb6540be09f4fc41f8d3aab15dfb136e274a9b3",
       "limits": {
         "daily_max": "1000.00",
         "hourly_max": "200.00",

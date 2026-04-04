@@ -102,7 +102,7 @@ def create_app() -> FastAPI:
 
     app = FastAPI(
         title="OmniClaw Agent API",
-        description="API for OmniClaw Agent Wallet Control Plane",
+        description="API for the OmniClaw Financial Policy Engine",
         version="2.0.0",
         lifespan=lifespan,
     )

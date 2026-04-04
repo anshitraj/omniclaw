@@ -2,6 +2,14 @@
 
 This guide walks you through setting up an OmniClaw agent for both buying and selling.
 
+OmniClaw is the **Economic Execution and Control Layer for Agentic Systems**.
+In that system:
+
+- the owner runs the **Financial Policy Engine**
+- the agent uses `omniclaw-cli` as the **zero-trust execution layer**
+- buyers pay with `omniclaw-cli pay`
+- sellers earn with `omniclaw-cli serve`
+
 ---
 
 ## Prerequisites
@@ -177,6 +185,12 @@ omniclaw-cli serve \
 ```
 
 This opens `http://localhost:8000/api/data` that requires USDC payment to access.
+
+This is the seller side of the same OmniClaw economy.
+The same CLI powers both sides:
+
+- buyer: `omniclaw-cli pay`
+- seller: `omniclaw-cli serve`
 
 ---
 

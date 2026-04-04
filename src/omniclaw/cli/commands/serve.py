@@ -60,7 +60,7 @@ def serve(
         from omniclaw.protocols.nanopayments.client import NanopaymentClient
         from omniclaw.protocols.nanopayments.middleware import GatewayMiddleware
 
-        # Get the seller's nano address from the control plane
+        # Get the seller's nano address from the Financial Policy Engine
         try:
             nano_resp = ctrl_client.get("/api/v1/nano-address")
             if nano_resp.status_code == 200:
@@ -73,7 +73,7 @@ def serve(
             seller_address = addr_resp.json().get("address")
 
         if not seller_address:
-            raise RuntimeError("Could not resolve seller address from control plane")
+            raise RuntimeError("Could not resolve seller address from Financial Policy Engine")
 
         # Initialize Circle nanopayment client
         circle_api_key = os.environ.get("CIRCLE_API_KEY", "")

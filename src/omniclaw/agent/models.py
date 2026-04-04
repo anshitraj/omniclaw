@@ -34,6 +34,7 @@ class PayResponse(BaseModel):
     error: str | None = None
     requires_confirmation: bool = False
     confirmation_id: str | None = None
+    response_data: Any | None = None
 
 
 class BalanceResponse(BaseModel):

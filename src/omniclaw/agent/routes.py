@@ -195,6 +195,8 @@ async def get_detailed_balance(
         "wallet_id": agent.wallet_id,
         "eoa_address": eoa_address,
         "gateway_balance": gateway_balance.available_decimal if gateway_balance else "0",
+        "gateway_balance_atomic": gateway_balance.available if gateway_balance else 0,
+        "gateway_total_atomic": gateway_balance.total if gateway_balance else 0,
         "circle_wallet_address": circle_address,
         "circle_wallet_balance": str(circle_balance) if circle_balance is not None else "0",
     }
@@ -919,6 +921,10 @@ async def x402_pay(
             idempotency_key=request.idempotency_key,
             metadata={"method": request.method, "body": request.body, "headers": request.headers},
         )
+        requires_confirmation = bool(
+            result.metadata.get("confirmation_required") if result.metadata else False
+        )
+        confirmation_id = result.metadata.get("confirmation_id") if result.metadata else None
 
         return PayResponse(
             success=result.success,
@@ -931,6 +937,9 @@ async def x402_pay(
             else (str(result.status) if result.status else "failed"),
             method="nanopayment",
             error=result.error,
+            requires_confirmation=requires_confirmation,
+            confirmation_id=confirmation_id,
+            response_data=result.resource_data,
         )
     except Exception as e:
         logger.error(f"x402 payment failed: {e}")
@@ -941,6 +950,7 @@ async def x402_pay(
             status="FAILED",
             method="nanopayment",
             error=str(e),
+            response_data=None,
         )
 
 

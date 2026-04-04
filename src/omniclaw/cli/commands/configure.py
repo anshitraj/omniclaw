@@ -9,7 +9,9 @@ from ..config import CONFIG_FILE, _mask_secret, is_quiet, load_config, save_conf
 
 
 def configure(
-    server_url: str | None = typer.Option(None, "--server-url", help="OmniClaw server URL"),
+    server_url: str | None = typer.Option(
+        None, "--server-url", help="OmniClaw Financial Policy Engine URL"
+    ),
     token: str | None = typer.Option(None, "--token", help="Agent token"),
     wallet: str | None = typer.Option(None, "--wallet", help="Wallet alias"),
     owner_token: str | None = typer.Option(None, "--owner-token", help="Owner token"),

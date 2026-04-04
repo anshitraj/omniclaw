@@ -1045,6 +1045,7 @@ class NanopaymentProtocolAdapter:
                     )
                 ),
                 error=None if result.success else "Nanopayment settlement failed",
+                resource_data=result.response_data,
                 metadata={
                     "nanopayment": True,
                     "payer": result.payer,

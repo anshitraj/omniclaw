@@ -74,7 +74,10 @@ def pay(
             response = client.post("/api/v1/x402/pay", json=payload)
             response.raise_for_status()
             data = response.json()
-            if not is_quiet() and data.get("confirmation_required"):
+            requires_confirmation = data.get("requires_confirmation") or data.get(
+                "confirmation_required"
+            )
+            if not is_quiet() and requires_confirmation:
                 confirmation_id = data.get("confirmation_id")
                 if confirmation_id:
                     typer.echo("Payment requires confirmation.")
@@ -123,7 +126,10 @@ def pay(
         response = client.post("/api/v1/pay", json=payload)
         response.raise_for_status()
         data = response.json()
-        if not is_quiet() and data.get("confirmation_required"):
+        requires_confirmation = data.get("requires_confirmation") or data.get(
+            "confirmation_required"
+        )
+        if not is_quiet() and requires_confirmation:
             confirmation_id = data.get("confirmation_id")
             if confirmation_id:
                 typer.echo("Payment requires confirmation.")
