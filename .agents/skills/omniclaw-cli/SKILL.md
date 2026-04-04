@@ -17,7 +17,7 @@ requires:
     description: >
       Scoped agent token. Never print, log, or transmit it. If missing, stop
       and notify the owner.
-version: 0.0.4
+version: 0.0.5
 author: Omnuron AI
 ---
 

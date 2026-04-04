@@ -104,9 +104,6 @@ packages = ["src/omniclaw"]
 [tool.hatch.build.targets.sdist]
 include = ["src/omniclaw"]
 
-[tool.hatch.build]
-sources = ["src"]
-
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
