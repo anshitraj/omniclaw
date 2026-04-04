@@ -1,0 +1,35 @@
+{
+  "version": "2.0",
+  "tokens": {
+    "payment-agent-token": {
+      "wallet_alias": "omni-bot-v4",
+      "active": true,
+      "label": "Omni Bot v4"
+    }
+  },
+  "wallets": {
+    "omni-bot-v4": {
+      "name": "Omni Bot v4",
+      "limits": {
+        "daily_max": "25.00",
+        "hourly_max": "10.00",
+        "per_tx_max": "1.00",
+        "per_tx_min": "0.01"
+      },
+      "rate_limits": {
+        "per_minute": 10,
+        "per_hour": 100
+      },
+      "recipients": {
+        "mode": "whitelist",
+        "addresses": [],
+        "domains": [
+          "api.stripe.com",
+          "localhost",
+          "127.0.0.1"
+        ]
+      },
+      "confirm_threshold": "0.005"
+    }
+  }
+}

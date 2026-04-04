@@ -19,7 +19,7 @@ services:
     environment:
       - OMNICLAW_REDIS_URL=redis://redis:6379/0
       - OMNICLAW_AGENT_POLICY_PATH=/config/policy.json
-      - OMNICLAW_AGENT_TOKEN=seller-agent-token
+      - OMNICLAW_AGENT_TOKEN=buyer-agent-token
       - OMNICLAW_LOG_LEVEL=INFO
       - OMNICLAW_POLICY_RELOAD_INTERVAL=0
       - OMNICLAW_NANOPAYMENTS_ENABLED=true

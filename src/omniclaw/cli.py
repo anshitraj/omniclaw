@@ -109,7 +109,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     setup_parser = subparsers.add_parser(
         "setup",
-        help="Quickly set up your Control Plane credentials (.env.agent)",
+        help="Quickly set up your Financial Policy Engine credentials (.env.agent)",
     )
     setup_parser.add_argument("--api-key", help="Circle API Key")
     setup_parser.add_argument(
@@ -118,7 +118,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     server_parser = subparsers.add_parser(
         "server",
-        help="Start the OmniClaw Control Plane (Financial Firewall) server",
+        help="Start the OmniClaw Financial Policy Engine server",
     )
     server_parser.add_argument("--host", default="0.0.0.0", help="Host to bind to")
     server_parser.add_argument("--port", type=int, default=8080, help="Port to listen on")
@@ -205,7 +205,7 @@ def handle_server(args: argparse.Namespace) -> int:
             print("❌ Error: Failed to resolve or generate Entity Secret.")
             return 1
 
-    print(f"🚀 Starting OmniClaw Control Plane on {args.host}:{args.port}...")
+    print(f"🚀 Starting OmniClaw Financial Policy Engine on {args.host}:{args.port}...")
     uvicorn.run(
         "omniclaw.agent.server:app",
         host=args.host,

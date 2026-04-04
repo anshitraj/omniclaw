@@ -21,7 +21,10 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 warnings.filterwarnings("ignore", category=UserWarning, module="web3")
 
 app = typer.Typer(
-    help="omniclaw-cli - CLI for AI agents to pay for things without losing control of money"
+    help=(
+        "omniclaw-cli - zero-trust execution layer for policy-controlled agent payments, "
+        "x402 services, and agentic commerce"
+    )
 )
 
 BANNER = r"""

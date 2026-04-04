@@ -1,284 +1,331 @@
----
-name: omniClaw
-description: Secure payment execution for AI agents with ERC-8004 identity, nanopayments, and policy-controlled wallets.
-metadata:
-  openclaw:
-    requires:
-      env:
-        - OMNICLAW_PRIVATE_KEY
-        - OMNICLAW_RPC_URL
-        - CIRCLE_API_KEY
-      bins:
-        - python
-    primaryEnv: OMNICLAW_PRIVATE_KEY
----
+# OmniClaw CLI Guide
 
-# OmniClaw Agent Wallet Skill
+This document is for human readers: owners, operators, reviewers, and developers.
 
-## What This Is
-A secure, owner-controlled skill that teaches AI agents how to use the **OmniClaw CLI** to safely execute financial operations against the **OmniClaw Financial Policy Engine**.
+It explains what OmniClaw CLI is, how setup works, what buyers and sellers do with the same CLI, how approval flows work, and where to find the exact live command reference.
 
-**Why does this exist?** Because agents should never have direct access to private keys. Instead:
-- Your **owner** runs the Financial Policy Engine that holds the private key
-- **You** (the agent) use the thin CLI to request actions
-- The **policy** in policy.json decides what you can and cannot do
+## Executive Summary
 
-This is "Friction as a Feature" - you can only do what your owner explicitly allows.
+`omniclaw-cli` is the agent-facing zero-trust execution layer for OmniClaw.
 
-## How It Works
+OmniClaw itself is the **Economic Execution and Control Layer for Agentic Systems**.
+That full system is larger than the CLI alone:
 
-```
-YOU (Agent)                    FINANCIAL POLICY ENGINE (Owner)
-─────────────                  ────────────────────────────────
+- the CLI is the constrained execution surface the agent uses
+- the Financial Policy Engine is the owner-run enforcement and signing layer
+- the settlement rails include direct USDC transfers, x402, CCTP, and Circle Gateway nanopayments
+- the policy, trust, ledger, and concurrency controls are part of the overall OmniClaw system
 
-   │                                │
-   │  omniclaw-cli pay ...          │
-   ├───────────────────────────────►│
-   │                                │ Check policy
-   │                                │ Sign transaction
-   │                                │ Return result
-   │◄──────────────────────────────┤
-   │                                │
-```
+It is the same CLI on both sides of the economy:
 
-You send requests to the Financial Policy Engine. It checks policy, signs with the private key (you never see it), and returns the result.
+- buyer side: `omniclaw-cli pay`
+- seller side: `omniclaw-cli serve`
 
-## Two Wallets You Have
+That two-sided model matters:
 
-| Wallet | Description |
-|--------|-------------|
-| **EOA** | Your "on-chain wallet" - derived from owner's private key. USDC starts here. |
-| **Circle Developer Wallet** | Auto-generated on startup and persisted into policy.json. This is where withdrawn funds go. |
+- without a seller exposing a paid endpoint with `serve`, there is nothing meaningful for a buyer to pay through x402
+- without a buyer using `pay`, the seller endpoint does not earn
 
-When you **deposit**, USDC moves from EOA → Gateway.
-When you **withdraw**, USDC moves from Gateway → your Circle wallet.
+OmniClaw keeps the private key and policy enforcement on the Financial Policy Engine side.
+The agent uses the CLI as a constrained execution surface.
 
-## Use Cases
-- **Micro-Payments**: Pay other agents using Circle USDC Nanopayments
-- **API Billing**: Handle subscriptions and per-call payments for premium API access
-- **Selling Services**: Expose your endpoints behind x402 payment gates to earn USDC
-- **Escrow & Settlement**: Settle debts securely via the x402 protocol
+## Reader Split
 
-## ERC-8004 Identity (Optional)
+There are now three separate artifacts, each with a different audience:
 
-Your owner can register you on-chain for identity verification:
+- `docs/agent-skills.md`
+  - human/operator guide
+- `.agents/skills/omniclaw-cli/SKILL.md`
+  - actual agent instruction file
+- `.agents/skills/omniclaw-cli/references/cli-reference.md`
+  - exact agent command reference generated from live CLI help
+
+There is also a human-copy of the generated command reference:
+
+- `docs/cli-reference.md`
+
+This split is deliberate.
+It keeps agent instructions short and reliable while giving humans a fuller explanation.
+
+## Setup Model
+
+A typical OmniClaw agent runtime needs:
+
+- `OMNICLAW_SERVER_URL`: Financial Policy Engine URL, for example `http://localhost:9090`
+- `OMNICLAW_TOKEN`: scoped agent token
+- optionally `OMNICLAW_OWNER_TOKEN`: only if the run is allowed to approve confirmations
+
+For local convenience, you can persist those values in CLI config:
 
 ```bash
-# Check/ensure identity is registered
-agent_id = await client.ensure_identity()
-
-# Submit feedback to rate sellers after payment
-await client.submit_feedback(
-    agent_id=seller_agent_id,
-    value=85,  # positive rating
-    tag1="helpful",
-    tag2="fast"
-)
+omniclaw-cli configure \
+  --server-url http://localhost:9090 \
+  --token payment-agent-token \
+  --wallet omni-bot-v4
 ```
 
-This builds your on-chain reputation. Sellers can verify buyers before accepting payments.
+Available `configure` flags:
 
-## Quick Start
-Agent runtimes should set environment variables (no interactive setup required):
-1. `OMNICLAW_SERVER_URL` - where the Financial Policy Engine runs
-2. `OMNICLAW_TOKEN` - your identity token (matches policy.json)
-3. `OMNICLAW_OWNER_TOKEN` - required only for confirmation approvals
+- `--server-url TEXT`
+- `--token TEXT`
+- `--wallet TEXT`
+- `--owner-token TEXT`
+- `--show`
+- `--show-raw`
+- `--interactive`
 
-Optional: persist config locally for dev workflows:
+Show saved config:
 
 ```bash
-omniclaw-cli configure --server-url $OMNICLAW_SERVER_URL --token $OMNICLAW_TOKEN --wallet primary
+omniclaw-cli configure --show
 ```
 
-CLI output is agent-first (JSON, no banner). For human-friendly output set:
+## Runtime Architecture
+
+Typical execution path:
+
+1. owner starts the Financial Policy Engine
+2. owner provisions policy and agent token(s)
+3. agent invokes `omniclaw-cli`
+4. Financial Policy Engine validates policy, balance, trust, and approval rules
+5. only approved actions are signed and executed
+
+In the normal CLI-agent model, the agent should not be given direct wallet secrets.
+
+This matches the official OmniClaw framing:
+
+- agents execute
+- policies authorize
+- infrastructure settles
+
+## Buyer Flows
+
+### Pay a paid URL
 
 ```bash
-export OMNICLAW_CLI_HUMAN=1
+omniclaw-cli can-pay --recipient https://api.vendor.com/data
+omniclaw-cli pay --recipient https://api.vendor.com/data --idempotency-key job-123
 ```
 
----
+### Pay a paid POST endpoint
 
-## Available Tool Actions
-
-### `address`
-Get your assigned wallet address (EOA).
 ```bash
-omniclaw-cli address
+omniclaw-cli pay \
+  --recipient https://api.vendor.com/inference \
+  --method POST \
+  --body '{"prompt":"hello"}' \
+  --header 'Content-Type: application/json' \
+  --idempotency-key job-123
 ```
 
-### `balance`
-Check your current available balance in the Gateway.
+### Direct USDC transfer
+
 ```bash
-omniclaw-cli balance
+omniclaw-cli pay \
+  --recipient 0xRecipientAddress \
+  --amount 5.00 \
+  --purpose "service payment" \
+  --idempotency-key job-123
 ```
 
-### `balance_detail`
-Get detailed balance breakdown including EOA, Gateway, and Circle wallet.
+### Buyer-side inspection and preparation
+
+Useful buyer commands:
+
+- `status`
+- `address`
+- `balance`
+- `balance-detail`
+- `can-pay`
+- `simulate`
+- `pay`
+- `deposit`
+- `withdraw`
+- `withdraw-trustless`
+- `withdraw-trustless-complete`
+- `ledger`
+
+## Seller Flows
+
+### Expose a paid endpoint
+
 ```bash
-omniclaw-cli balance_detail
+omniclaw-cli serve \
+  --price 0.01 \
+  --endpoint /api/data \
+  --exec "python app.py" \
+  --port 8000
 ```
 
-### `can-pay`
-Verify if a recipient is allowed by your owner's policy.
+What `serve` does:
+
+- starts an x402 payment gate
+- returns `402 Payment Required` to unpaid callers
+- verifies payment through Circle Gateway middleware
+- runs the command supplied via `--exec`
+- returns command output to the paid caller
+
+Important implementation detail:
+
+- `serve` binds to `0.0.0.0`
+- the banner may print `localhost`, but the actual bind host is all interfaces
+
+Useful seller commands:
+
+- `status`
+- `address`
+- `balance`
+- `balance-detail`
+- `serve`
+- `ledger`
+
+## Approval and Intent Flows
+
+Some policies require approval before spend.
+In those cases `pay` can return fields such as:
+
+- `requires_confirmation: true`
+- `confirmation_id: ...`
+
+Owner approval commands:
+
 ```bash
-omniclaw-cli can-pay --recipient 0xRecipientAddress
+omniclaw-cli confirmations get --id <confirmation-id>
+omniclaw-cli confirmations approve --id <confirmation-id>
+omniclaw-cli confirmations deny --id <confirmation-id>
 ```
 
-### `simulate`
-Simulate a payment before executing to check if it meets your spending limits.
+Intent commands:
+
 ```bash
-omniclaw-cli simulate --recipient 0xRecipientAddress --amount 5.00
+omniclaw-cli create-intent --recipient 0xRecipient --amount 5.00 --purpose "vendor payment"
+omniclaw-cli confirm-intent --intent-id <intent-id>
+omniclaw-cli get-intent --intent-id <intent-id>
+omniclaw-cli cancel-intent --intent-id <intent-id> --reason "no longer needed"
 ```
-**Always do this before paying** to avoid failed transactions.
 
-### `pay`
-Execute a payment. If it violates your policy, the CLI rejects it.
+## Full Command Surface
+
+Current top-level commands exposed by the CLI:
+
+- `configure`
+- `address`
+- `balance`
+- `balance-detail`
+- `balance_detail`
+- `deposit`
+- `withdraw`
+- `withdraw-trustless`
+- `withdraw_trustless`
+- `withdraw-trustless-complete`
+- `withdraw_trustless_complete`
+- `pay`
+- `simulate`
+- `can-pay`
+- `can_pay`
+- `create-intent`
+- `create_intent`
+- `confirm-intent`
+- `confirm_intent`
+- `get-intent`
+- `get_intent`
+- `cancel-intent`
+- `cancel_intent`
+- `ledger`
+- `list-tx`
+- `list_tx`
+- `serve`
+- `status`
+- `ping`
+- `wallet`
+- `intents`
+- `confirmations`
+
+## Command Families
+
+### Payment execution
+
+- `pay`
+- `simulate`
+- `can-pay`
+- `create-intent`
+- `confirm-intent`
+- `get-intent`
+- `cancel-intent`
+- `confirmations get|approve|deny`
+
+### Balance and funds movement
+
+- `address`
+- `balance`
+- `balance-detail`
+- `deposit`
+- `withdraw`
+- `withdraw-trustless`
+- `withdraw-trustless-complete`
+
+### Seller execution
+
+- `serve`
+
+### Inspection
+
+- `status`
+- `ping`
+- `ledger`
+- `list-tx`
+
+## Recommended Operational Rules
+
+- use `can-pay` for new recipients
+- use `--idempotency-key` for job-based payments
+- use `balance-detail` when Gateway balances matter
+- use `simulate` when the amount or guard risk is non-trivial
+- do not give agents raw wallet secrets in the normal CLI path
+- treat `serve` and `pay` as one economic system, not separate products
+
+## Auto-Generated Reference
+
+The exact command reference is generated from the live CLI help surface.
+
+Regenerate it with:
+
 ```bash
-# Direct transfer to another agent
-omniclaw-cli pay --recipient 0xRecipientAddress --amount 5.00 --purpose "Payment for service"
-
-# Pay for x402 service (URL)
-omniclaw-cli pay --recipient https://api.example.com/data --amount 1.00
+python .agents/skills/omniclaw-cli/scripts/generate_cli_reference.py
 ```
 
-### `deposit`
-Deposit USDC from your EOA to Circle Gateway. **Required before making nanopayments.**
-```bash
-omniclaw-cli deposit --amount 10.00
-```
-This is an on-chain transaction (costs gas). Moves USDC: EOA → Gateway.
+Generated outputs:
 
-### `withdraw`
-Withdraw USDC from Gateway to your Circle Developer Wallet. No recipient needed - automatic.
-```bash
-omniclaw-cli withdraw --amount 5.00
-```
+- `.agents/skills/omniclaw-cli/references/cli-reference.md`
+- `docs/cli-reference.md`
 
-### `withdraw_trustless`
-Trustless withdrawal (fallback if Circle API fails). Takes ~7 days.
-```bash
-omniclaw-cli withdraw_trustless --amount 5.00
-```
-Use only if the regular `withdraw` fails.
+That keeps the documented flags and command surface aligned with the actual CLI.
 
-### `withdraw_trustless_complete`
-Complete a trustless withdrawal after the delay has passed.
-```bash
-omniclaw-cli withdraw_trustless_complete
-```
+## Why There Is No `agents/openai.yaml`
 
-### `serve`
-Expose a service behind x402 payment gate to receive payments.
-```bash
-omniclaw-cli serve --price 0.01 --endpoint /api/data --exec "python my_service.py" --port 8000
-```
-This opens `http://localhost:8000/api/data` that requires USDC payment to access.
-- Other agents can `pay` your URL
-- Payment is automatically settled via Circle Gateway
+`agents/openai.yaml` is optional UI metadata.
 
-### `create_intent`
-Create a payment intent (pre-authorize a payment).
-```bash
-omniclaw-cli create_intent --recipient 0xRecipientAddress --amount 5.00 --purpose "Service payment"
-```
+It is useful for things like:
 
-### `confirm_intent`
-Confirm a pending intent (capture the payment).
-```bash
-omniclaw-cli confirm_intent --intent-id <intent-id>
-```
+- display names in skill pickers
+- short descriptions in UI chips
+- marketplace-style metadata
 
-### `get_intent`
-Get details of a payment intent.
-```bash
-omniclaw-cli get_intent --intent-id <intent-id>
-```
+It is not required for the OmniClaw agent skill to work.
 
-### `cancel_intent`
-Cancel a pending intent.
-```bash
-omniclaw-cli cancel_intent --intent-id <intent-id>
-```
+For this repository, the functional sources of truth are:
 
-### `list_tx` / `ledger`
-Retrieve your transaction history.
-```bash
-omniclaw-cli list_tx --limit 10
-omniclaw-cli ledger --limit 20
-```
+- `.agents/skills/omniclaw-cli/SKILL.md`
+- `.agents/skills/omniclaw-cli/references/cli-reference.md`
 
-### `status`
-Get agent status and health.
-```bash
-omniclaw-cli status
-```
+That keeps the runtime path minimal and avoids duplicating instruction content in another file.
 
-### `ping`
-Health check.
-```bash
-omniclaw-cli ping
-```
+## Ship Recommendation
 
----
+This is now the recommended storage layout:
 
-## Safety Constraints
+- keep agent runtime instructions under `.agents/skills/omniclaw-cli/`
+- keep human/operator docs under `docs/`
+- keep the exact CLI reference generated, not handwritten
 
-1. **Never use curl or raw HTTP** - always use the CLI. Bypassing the CLI bypasses policy.
-2. **Never modify your limits** - if blocked by policy, you MUST HALT and request your operator.
-3. **Always simulate before paying** - check if the payment will succeed.
-4. **Withdraw auto-routes to Circle wallet** - no recipient needed, this is by design.
-5. **You never see the private key** - only the owner has it. You only send requests.
-
----
-
-## Typical Workflow
-
-### To Pay for Something:
-```bash
-# 1. Check balance
-omniclaw-cli balance
-
-# 2. If needed, deposit more USDC to Gateway
-omniclaw-cli deposit --amount 10
-
-# 3. Simulate to check limits
-omniclaw-cli simulate --recipient 0xSeller... --amount 5
-
-# 4. Pay
-omniclaw-cli pay --recipient 0xSeller... --amount 5
-```
-
-### To Receive Payments:
-```bash
-# Start a payment gate for your service
-omniclaw-cli serve --price 0.01 --endpoint /api --exec "python my_service.py" --port 8000
-
-# Other agents can now pay your URL and you automatically receive USDC
-```
-
-### To Move Funds Out:
-```bash
-# Withdraw from Gateway to your Circle Developer Wallet
-omniclaw-cli withdraw --amount 5
-
-# If API fails, use trustless (takes ~7 days)
-omniclaw-cli withdraw_trustless --amount 5
-```
-
----
-
-## Flow Diagram
-
-```
-┌─────────┐    deposit     ┌─────────┐    pay     ┌─────────┐
-│  Your   │ ────────────►  │ Gateway │ ─────────► │ Seller  │
-│   EOA   │   (on-chain)   │ Contract│  (x402)    │   EOA   │
-└─────────┘                └─────────┘           └─────────┘
-                                  │
-                                  │ withdraw
-                                  ▼
-                          ┌─────────────┐
-                          │    Your     │
-                          │ Circle Wallet│
-                          └─────────────┘
-```
+That is the cleanest split for long-term maintenance and for reducing agent mistakes.
