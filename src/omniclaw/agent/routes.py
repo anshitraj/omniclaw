@@ -206,7 +206,9 @@ async def get_detailed_balance(
     gateway_onchain_balance = (
         await client.get_gateway_onchain_balance(agent.wallet_id) if client._nano_adapter else None
     )
-    payment_address = await client.get_payment_address(agent.wallet_id) if client._nano_client else None
+    payment_address = (
+        await client.get_payment_address(agent.wallet_id) if client._nano_client else None
+    )
     payment_gateway_balance = None
     if payment_address:
         try:
@@ -217,16 +219,26 @@ async def get_detailed_balance(
     return {
         "wallet_id": agent.wallet_id,
         "eoa_address": eoa_address,
-        "gateway_balance": _fmt_amount(gateway_balance.available_decimal) if gateway_balance else "0.00",
+        "gateway_balance": _fmt_amount(gateway_balance.available_decimal)
+        if gateway_balance
+        else "0.00",
         "gateway_balance_atomic": gateway_balance.available if gateway_balance else 0,
         "gateway_total_atomic": gateway_balance.total if gateway_balance else 0,
-        "gateway_onchain_balance": _fmt_amount(gateway_onchain_balance.available_decimal) if gateway_onchain_balance else "0.00",
-        "gateway_onchain_balance_atomic": gateway_onchain_balance.available if gateway_onchain_balance else 0,
+        "gateway_onchain_balance": _fmt_amount(gateway_onchain_balance.available_decimal)
+        if gateway_onchain_balance
+        else "0.00",
+        "gateway_onchain_balance_atomic": gateway_onchain_balance.available
+        if gateway_onchain_balance
+        else 0,
         "circle_wallet_address": circle_address,
-        "circle_wallet_balance": _fmt_amount(circle_balance) if circle_balance is not None else "0.00",
+        "circle_wallet_balance": _fmt_amount(circle_balance)
+        if circle_balance is not None
+        else "0.00",
         "payment_address": payment_address,
         "payment_gateway_balance": (
-            _fmt_amount(payment_gateway_balance.available_decimal) if payment_gateway_balance else None
+            _fmt_amount(payment_gateway_balance.available_decimal)
+            if payment_gateway_balance
+            else None
         ),
         "payment_gateway_balance_atomic": (
             payment_gateway_balance.available if payment_gateway_balance else None
