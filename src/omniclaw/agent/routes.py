@@ -32,6 +32,7 @@ from omniclaw.agent.models import (
 from omniclaw.agent.policy import PolicyManager, WalletManager
 from omniclaw.core.logging import get_logger
 from omniclaw.guards.confirmations import ConfirmationStore
+from omniclaw.ledger import LedgerEntry, LedgerEntryStatus, LedgerEntryType
 
 if TYPE_CHECKING:
     from omniclaw import OmniClaw
@@ -1029,9 +1030,6 @@ async def x402_verify(
         result = await client._nano_client.settle(payload, requirements)
 
         if result.success:
-            from decimal import Decimal
-            from omniclaw.ledger import LedgerEntry, LedgerEntryStatus, LedgerEntryType
-
             await client._ledger.record(
                 LedgerEntry(
                     wallet_id=agent.wallet_id,

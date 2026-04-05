@@ -4,7 +4,6 @@ import base64
 import json
 import os
 import subprocess
-from typing import Any
 
 import typer
 
