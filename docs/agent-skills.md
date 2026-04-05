@@ -55,7 +55,7 @@ A typical OmniClaw agent runtime needs:
 - `OMNICLAW_TOKEN`: scoped agent token
 - optionally `OMNICLAW_OWNER_TOKEN`: only if the run is allowed to approve confirmations
 
-For local convenience, you can persist those values in CLI config:
+For local convenience, you can persist those values in CLI config. `configure` writes saved CLI config; it does not export shell environment variables:
 
 ```bash
 omniclaw-cli configure \
@@ -79,6 +79,8 @@ Show saved config:
 ```bash
 omniclaw-cli configure --show
 ```
+
+When the CLI has been configured already, later commands such as `balance`, `can-pay`, `pay`, and `serve` can reuse that saved config without re-exporting `OMNICLAW_SERVER_URL` and `OMNICLAW_TOKEN` in the shell.
 
 ## Runtime Architecture
 

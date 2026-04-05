@@ -241,10 +241,9 @@ class Ledger:
         if status:
             filters["status"] = status.value
 
-        # Fetch without limit if we have date filters, otherwise fetch limit
-        fetch_limit = None if (from_date or to_date) else limit
-
-        raw_results = await self._storage.query(self.COLLECTION, filters=filters, limit=fetch_limit)
+        # Storage backends do not guarantee ordering. Fetch all matching rows,
+        # sort by timestamp locally, then apply the requested limit.
+        raw_results = await self._storage.query(self.COLLECTION, filters=filters, limit=None)
 
         entries = [LedgerEntry.from_dict(d) for d in raw_results]
 

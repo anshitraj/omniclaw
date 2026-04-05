@@ -169,7 +169,10 @@ def handle_setup(args: argparse.Namespace) -> int:
     create_env_file(api_key, entity_secret, env_path=env_path, network=args.network, overwrite=True)
     print(f"✨ Successfully configured {env_path}!")
     print("To start the server locally, run: omniclaw server")
-    print("To start via Docker, run: docker compose -f docker-compose.agent.yml up -d")
+    print(
+        "To start via Docker, run: "
+        "docker compose -f examples/local-economy/docker-compose.payment-agent.yml up -d"
+    )
     return 0
 
 

@@ -25,7 +25,8 @@
         "addresses": [],
         "domains": []
       },
-      "confirm_threshold": null
+      "confirm_threshold": null,
+      "address": "0x6a5fb3f11216ad67f80f3ac4c5896aafcc2afc3a"
     }
   }
 }

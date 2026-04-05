@@ -189,3 +189,10 @@ class X402VerifyRequest(BaseModel):
     amount: str = Field(..., description="Amount paid")
     sender: str = Field(..., description="Sender address")
     resource: str = Field(..., description="Resource URL")
+
+
+class X402RequirementsRequest(BaseModel):
+    """X402 requirements request for seller-side paid endpoints."""
+
+    amount: str = Field(..., description="Price in USD or atomic units")
+    resource: str = Field(..., description="Protected resource URL")

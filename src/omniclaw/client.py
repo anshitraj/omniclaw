@@ -649,22 +649,48 @@ class OmniClaw:
             recipient=recipient,
         )
 
+    async def get_gateway_balance_for_address(
+        self,
+        address: str,
+    ) -> GatewayBalance:
+        """Get Gateway balance for an arbitrary address."""
+        if not self._nano_client:
+            raise NanopaymentNotInitializedError()
+
+        network = self._nanopayment_network()
+        balance = await self._nano_client.check_balance(address=address, network=network)
+        return GatewayBalance(
+            total=balance.total,
+            available=balance.available,
+            formatted_total=f"{balance.total / 1e6} USDC",
+            formatted_available=f"{balance.available / 1e6} USDC",
+        )
+
     async def get_gateway_balance(
         self,
         wallet_id: str,
     ) -> GatewayBalance:
-        """
-        Get the Gateway wallet balance for a wallet.
+        """Get the spendable Gateway balance for the current signer."""
+        if not self._nano_adapter or not self._nano_client:
+            raise NanopaymentNotInitializedError()
 
-        Args:
-            wallet_id: The wallet ID to check gateway balance for.
+        network = self._nanopayment_network()
+        balance = await self._nano_client.check_balance(
+            address=self._nano_adapter.address,
+            network=network,
+        )
+        return GatewayBalance(
+            total=balance.total,
+            available=balance.available,
+            formatted_total=f"{balance.total / 1e6} USDC",
+            formatted_available=f"{balance.available / 1e6} USDC",
+        )
 
-        Returns:
-            GatewayBalance with total, available, and formatted amounts.
-
-        Raises:
-            NanopaymentNotInitializedError: If nanopayments are disabled.
-        """
+    async def get_gateway_onchain_balance(
+        self,
+        wallet_id: str,
+    ) -> GatewayBalance:
+        """Get the raw on-chain Gateway contract balance for the current signer."""
         if not self._nano_adapter or not self._nano_client:
             raise NanopaymentNotInitializedError()
 
@@ -678,11 +704,8 @@ class OmniClaw:
             rpc_url=self._config.rpc_url or "",
             nanopayment_client=self._nano_client,
         )
-        # Use on-chain available balance (bypasses Circle API)
         available = await manager.get_gateway_available_balance()
-        total = available  # On-chain doesn't separate total/available the same way
-        from omniclaw.protocols.nanopayments.wallet import GatewayBalance
-
+        total = available
         return GatewayBalance(
             total=total,
             available=available,
@@ -920,16 +943,16 @@ class OmniClaw:
 
     async def get_payment_address(self, wallet_id: str) -> str:
         """
-        Get the payment address for a wallet.
+        Get the address that should receive x402/nanopayment proceeds.
 
-        This is the address that should be funded with USDC to enable payments.
-
-        Args:
-            wallet_id: The wallet ID to get the payment address for.
-
-        Returns:
-            The Ethereum address (0x...) that can receive USDC.
+        When nanopayments are enabled we must use the locally controlled EOA,
+        because Gateway deposits/withdrawals and on-chain balance queries are tied
+        to the signer address. Falling back to the Circle wallet address causes
+        seller revenue to accrue to a different address than the one the server can
+        withdraw from.
         """
+        if self._nano_adapter:
+            return self._nano_adapter.address
         wallet = await self.get_wallet(wallet_id)
         return wallet.address
 
@@ -1247,26 +1270,15 @@ class OmniClaw:
 
             if route_uses_gateway and self._nano_adapter:
                 try:
-                    # Get balance via GatewayWalletManager - use ON-CHAIN query
-                    from omniclaw.protocols.nanopayments.wallet import GatewayWalletManager
-
-                    private_key = self._nano_adapter.signer.raw_key
-                    network = self._nanopayment_network()
-                    manager = GatewayWalletManager(
-                        private_key=private_key,
-                        network=network,
-                        rpc_url=self._config.rpc_url or "",
-                        nanopayment_client=self._nano_client,
-                    )
-                    # Use on-chain query (bypasses Circle API)
-                    available = await manager.get_gateway_available_balance()
-                    balance_source = f"Gateway: {available}"
+                    gateway_balance = await self.get_gateway_balance(wallet_id)
+                    available = Decimal(str(gateway_balance.available_decimal))
+                    balance_source = f"Gateway available: {available}"
                 except Exception as e:
                     # For nanopayment routes, don't fall back to circle balance
                     # Instead, log error and use 0 (will fail with clearer message)
                     self._logger.warning(f"Gateway balance check failed: {e}")
-                    available = 0
-                    balance_source = "Gateway: (check failed)"
+                    available = Decimal("0")
+                    balance_source = "Gateway available: (check failed)"
             else:
                 available = circle_balance - reserved_total
                 balance_source = f"Circle: {available}"
@@ -1360,6 +1372,12 @@ class OmniClaw:
                     result.blockchain_tx,
                     metadata_updates={"transaction_id": result.transaction_id},
                 )
+                if result.amount != amount_decimal:
+                    await self._storage.update(
+                        self._ledger.COLLECTION,
+                        ledger_entry.id,
+                        {"amount": str(result.amount)},
+                    )
                 if guards_chain:
                     try:
                         await guards_chain.commit(reservation_tokens)
