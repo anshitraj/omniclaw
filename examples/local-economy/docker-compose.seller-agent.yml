@@ -11,13 +11,14 @@ services:
       retries: 10
 
   seller-agent:
+    image: omniclaw-agent:local
     build:
-      context: .
+      context: ../..
       dockerfile: Dockerfile.agent
     command: uv run uvicorn omniclaw.agent.server:app --host 0.0.0.0 --port 9091
     environment:
       OMNICLAW_REDIS_URL: redis://seller-agent-redis:6379/0
-      OMNICLAW_AGENT_POLICY_PATH: /config/seller-agent.policy.json
+      OMNICLAW_AGENT_POLICY_PATH: /config/runtime-policy.json
       OMNICLAW_AGENT_TOKEN: seller-agent-token
       OMNICLAW_LOG_LEVEL: INFO
       OMNICLAW_POLICY_RELOAD_INTERVAL: 0
@@ -29,7 +30,7 @@ services:
       CIRCLE_API_KEY: ${SELLER_CIRCLE_API_KEY:-${CIRCLE_API_KEY}}
       ENTITY_SECRET: ${SELLER_ENTITY_SECRET:-${ENTITY_SECRET}}
     volumes:
-      - ./seller-agent.policy.json:/config/seller-agent.policy.json
+      - ${SELLER_AGENT_POLICY_FILE:-./seller-agent.policy.json}:/config/runtime-policy.json
     ports:
       - "9091:9091"
     depends_on:

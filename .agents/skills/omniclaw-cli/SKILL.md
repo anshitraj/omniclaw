@@ -12,7 +12,7 @@ requires:
   - env: OMNICLAW_SERVER_URL
     description: >
       OmniClaw Financial Policy Engine base URL. Required unless the CLI was
-      already configured locally before the agent turn.
+      already persisted in local CLI config before the agent turn.
   - env: OMNICLAW_TOKEN
     description: >
       Scoped agent token. Never print, log, or transmit it. If missing, stop
@@ -69,8 +69,9 @@ The runtime should normally provide either:
 - `OMNICLAW_TOKEN`
 - optionally `OMNICLAW_OWNER_TOKEN` if this run is allowed to approve confirmations
 
-2. preconfigured CLI state
+2. persisted CLI config
 - `omniclaw-cli configure` was already run before the turn
+- the CLI reads saved config values for server URL, token, wallet alias, and optional owner token
 
 If neither is true, stop and ask the owner for:
 

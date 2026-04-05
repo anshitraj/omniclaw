@@ -26,6 +26,7 @@ from omniclaw.agent.models import (
     TransactionInfo,
     WalletInfo,
     X402PayRequest,
+    X402RequirementsRequest,
     X402VerifyRequest,
 )
 from omniclaw.agent.policy import PolicyManager, WalletManager
@@ -38,6 +39,13 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 router = APIRouter(prefix="/api/v1", tags=["agent"])
+
+
+def _fmt_amount(value: object) -> str:
+    try:
+        return f"{Decimal(str(value)).quantize(Decimal('0.01'))}"
+    except Exception:
+        return str(value)
 
 
 async def get_policy_manager(request: Request) -> PolicyManager:
@@ -169,8 +177,8 @@ async def get_balance(
 
     return BalanceResponse(
         wallet_id=agent.wallet_id,
-        available=available,
-        total=total,
+        available=_fmt_amount(available),
+        total=_fmt_amount(total) if total is not None else None,
         reserved=reserved,
     )
 
@@ -194,15 +202,34 @@ async def get_detailed_balance(
     gateway_balance = (
         await client.get_gateway_balance(agent.wallet_id) if client._nano_adapter else None
     )
+    gateway_onchain_balance = (
+        await client.get_gateway_onchain_balance(agent.wallet_id) if client._nano_adapter else None
+    )
+    payment_address = await client.get_payment_address(agent.wallet_id) if client._nano_client else None
+    payment_gateway_balance = None
+    if payment_address:
+        try:
+            payment_gateway_balance = await client.get_gateway_balance_for_address(payment_address)
+        except Exception:
+            payment_gateway_balance = None
 
     return {
         "wallet_id": agent.wallet_id,
         "eoa_address": eoa_address,
-        "gateway_balance": gateway_balance.available_decimal if gateway_balance else "0",
+        "gateway_balance": _fmt_amount(gateway_balance.available_decimal) if gateway_balance else "0.00",
         "gateway_balance_atomic": gateway_balance.available if gateway_balance else 0,
         "gateway_total_atomic": gateway_balance.total if gateway_balance else 0,
+        "gateway_onchain_balance": _fmt_amount(gateway_onchain_balance.available_decimal) if gateway_onchain_balance else "0.00",
+        "gateway_onchain_balance_atomic": gateway_onchain_balance.available if gateway_onchain_balance else 0,
         "circle_wallet_address": circle_address,
-        "circle_wallet_balance": str(circle_balance) if circle_balance is not None else "0",
+        "circle_wallet_balance": _fmt_amount(circle_balance) if circle_balance is not None else "0.00",
+        "payment_address": payment_address,
+        "payment_gateway_balance": (
+            _fmt_amount(payment_gateway_balance.available_decimal) if payment_gateway_balance else None
+        ),
+        "payment_gateway_balance_atomic": (
+            payment_gateway_balance.available if payment_gateway_balance else None
+        ),
     }
 
 
@@ -276,6 +303,8 @@ async def withdraw_from_gateway(
         )
 
     try:
+        from decimal import Decimal
+
         if recipient is None:
             wallet_cfg = policy_mgr.get_wallet_config(agent.wallet_id)
             recipient = wallet_cfg.get("address")
@@ -285,23 +314,58 @@ async def withdraw_from_gateway(
                     detail="No default withdrawal address in policy. Set wallets.<alias>.address or pass recipient.",
                 )
 
-        result = await client.withdraw_from_gateway(
-            wallet_id=agent.wallet_id,
-            amount_usdc=amount,
-            destination_chain=destination_chain,
-            recipient=recipient,
-        )
-        burn_tx_hash = getattr(result, "burn_tx_hash", None)
-        mint_tx_hash = getattr(result, "mint_tx_hash", None)
-        status = getattr(result, "status", None) or ("COMPLETED" if mint_tx_hash else "PENDING")
-        return {
-            "success": bool(mint_tx_hash),
-            "amount_withdrawn": result.formatted_amount,
-            "burn_tx_hash": burn_tx_hash,
-            "mint_tx_hash": mint_tx_hash,
-            "status": status,
-            "message": "Withdrawal initiated",
-        }
+        requested_amount = Decimal(str(amount))
+        try:
+            result = await client.withdraw_from_gateway(
+                wallet_id=agent.wallet_id,
+                amount_usdc=amount,
+                destination_chain=destination_chain,
+                recipient=recipient,
+            )
+            burn_tx_hash = getattr(result, "burn_tx_hash", None)
+            mint_tx_hash = getattr(result, "mint_tx_hash", None)
+            status = getattr(result, "status", None) or ("COMPLETED" if mint_tx_hash else "PENDING")
+            return {
+                "success": bool(mint_tx_hash),
+                "amount_withdrawn": _fmt_amount(result.formatted_amount.split()[0]) + " USDC",
+                "burn_tx_hash": burn_tx_hash,
+                "mint_tx_hash": mint_tx_hash,
+                "status": status,
+                "message": "Withdrawal initiated",
+            }
+        except Exception as exc:
+            available = await client.get_gateway_balance(agent.wallet_id)
+            if (
+                destination_chain is None
+                and requested_amount > Decimal("0.10")
+                and Decimal(str(available.available_decimal)) >= requested_amount
+                and "insufficient_balance" in str(exc).lower()
+            ):
+                remaining = requested_amount
+                mint_tx_hashes = []
+                chunk_size = Decimal("0.10")
+                while remaining > Decimal("0"):
+                    chunk = min(chunk_size, remaining)
+                    chunk_result = await client.withdraw_from_gateway(
+                        wallet_id=agent.wallet_id,
+                        amount_usdc=str(chunk),
+                        destination_chain=destination_chain,
+                        recipient=recipient,
+                    )
+                    mint_tx_hash = getattr(chunk_result, "mint_tx_hash", None)
+                    if mint_tx_hash:
+                        mint_tx_hashes.append(mint_tx_hash)
+                    remaining -= chunk
+                return {
+                    "success": True,
+                    "amount_withdrawn": _fmt_amount(requested_amount) + " USDC",
+                    "burn_tx_hash": None,
+                    "mint_tx_hash": mint_tx_hashes[-1] if mint_tx_hashes else None,
+                    "mint_tx_hashes": mint_tx_hashes,
+                    "status": "COMPLETED",
+                    "message": f"Withdrawal initiated in {len(mint_tx_hashes)} chunks of up to {chunk_size} USDC",
+                }
+            raise exc
     except Exception as e:
         import traceback
 
@@ -566,7 +630,7 @@ async def pay(
             success=result.success,
             transaction_id=result.transaction_id,
             blockchain_tx=result.blockchain_tx,
-            amount=str(result.amount),
+            amount=_fmt_amount(result.amount),
             recipient=result.recipient,
             status=result.status.value
             if result.status and hasattr(result.status, "value")
@@ -582,7 +646,7 @@ async def pay(
         logger.error(f"Payment failed: {e}")
         return PayResponse(
             success=False,
-            amount=request.amount,
+            amount=_fmt_amount(request.amount),
             recipient=request.recipient,
             status="FAILED",
             method="TRANSFER",
@@ -636,49 +700,21 @@ async def list_transactions(
     client: OmniClaw = Depends(get_omniclaw_client),
 ):
     try:
-        transactions = await client.list_transactions(wallet_id=agent.wallet_id)
-        transactions = transactions[:limit]
-
+        entries = await client._ledger.query(wallet_id=agent.wallet_id, limit=limit)
         return ListTransactionsResponse(
             transactions=[
                 TransactionInfo(
-                    id=tx.id,
-                    wallet_id=tx.wallet_id,
-                    recipient=(
-                        getattr(tx, "recipient", None)
-                        or getattr(tx, "destination_address", None)
-                        or getattr(tx, "source_address", None)
-                        or ""
-                    ),
-                    amount=str(
-                        getattr(tx, "amount", None)
-                        or (tx.amounts[0] if getattr(tx, "amounts", None) else "0")
-                    ),
-                    status=(
-                        (tx.status.value if hasattr(tx.status, "value") else str(tx.status))
-                        if getattr(tx, "status", None) is not None
-                        else (
-                            tx.state.value
-                            if getattr(tx, "state", None) is not None and hasattr(tx.state, "value")
-                            else (
-                                str(tx.state)
-                                if getattr(tx, "state", None) is not None
-                                else "failed"
-                            )
-                        )
-                    ),
-                    tx_hash=tx.tx_hash,
-                    created_at=(
-                        tx.created_at.isoformat()
-                        if getattr(tx, "created_at", None)
-                        else (
-                            tx.create_date.isoformat() if getattr(tx, "create_date", None) else None
-                        )
-                    ),
+                    id=entry.id,
+                    wallet_id=entry.wallet_id,
+                    recipient=entry.recipient,
+                    amount=_fmt_amount(entry.amount),
+                    status=entry.status.value,
+                    tx_hash=entry.tx_hash,
+                    created_at=entry.timestamp.isoformat() if entry.timestamp else None,
                 )
-                for tx in transactions
+                for entry in entries
             ],
-            total=len(transactions),
+            total=len(entries),
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
@@ -775,7 +811,7 @@ async def confirm_intent(
             success=result.success,
             transaction_id=result.transaction_id,
             blockchain_tx=result.blockchain_tx,
-            amount=str(result.amount),
+            amount=_fmt_amount(result.amount),
             recipient=result.recipient,
             status=result.status.value
             if result.status and hasattr(result.status, "value")
@@ -933,7 +969,7 @@ async def x402_pay(
             success=result.success,
             transaction_id=result.transaction_id,
             blockchain_tx=result.blockchain_tx,
-            amount=str(result.amount),
+            amount=_fmt_amount(result.amount),
             recipient=result.recipient,
             status=result.status.value
             if result.status and hasattr(result.status, "value")
@@ -948,7 +984,7 @@ async def x402_pay(
         logger.error(f"x402 payment failed: {e}")
         return PayResponse(
             success=False,
-            amount="0",
+            amount="0.00",
             recipient=request.url,
             status="FAILED",
             method="nanopayment",
@@ -973,37 +1009,90 @@ async def x402_verify(
 
         sig_data = json.loads(base64.b64decode(request.signature))
 
+        from omniclaw.protocols.nanopayments.middleware import GatewayMiddleware
         from omniclaw.protocols.nanopayments.types import PaymentPayload, PaymentRequirements
 
         payload = PaymentPayload.from_dict(sig_data)
+        amount_text = request.amount if request.amount.startswith("$") else f"${request.amount}"
 
-        amount_micro = (
-            int(request.amount) if request.amount.isdigit() else int(float(request.amount) * 10**6)
+        seller_address = await client.get_payment_address(agent.wallet_id)
+        if not seller_address:
+            return {"valid": False, "error": "Seller payment address not found"}
+
+        middleware = GatewayMiddleware(
+            seller_address=seller_address,
+            nanopayment_client=client._nano_client,
         )
-
-        wallet_addr = await client.get_payment_address(agent.wallet_id)
-
-        requirements = PaymentRequirements(
-            scheme=payload.scheme,
-            network=payload.network,
-            max_amount_required=str(amount_micro),
-            resource=request.resource,
-            description="x402 payment",
-            recipient=wallet_addr,
-        )
+        requirements_body = await middleware._build_402_response(amount_text)
+        requirements = PaymentRequirements.from_dict(requirements_body)
 
         result = await client._nano_client.settle(payload, requirements)
 
         if result.success:
+            from decimal import Decimal
+            from omniclaw.ledger import LedgerEntry, LedgerEntryStatus, LedgerEntryType
+
+            await client._ledger.record(
+                LedgerEntry(
+                    wallet_id=agent.wallet_id,
+                    recipient=result.payer or "",
+                    amount=Decimal(str(request.amount)),
+                    entry_type=LedgerEntryType.PAYMENT,
+                    status=LedgerEntryStatus.COMPLETED,
+                    tx_hash=result.transaction,
+                    method="nanopayment_receive",
+                    purpose=f"x402 settlement for {request.resource}",
+                    metadata={
+                        "direction": "incoming",
+                        "resource": request.resource,
+                        "payer": result.payer,
+                        "transaction_id": result.transaction,
+                    },
+                )
+            )
             return {
                 "valid": True,
                 "sender": result.payer,
                 "amount": request.amount,
                 "transaction": result.transaction,
             }
-        else:
-            return {"valid": False, "error": result.error_reason or "Settlement failed"}
+        return {"valid": False, "error": result.error_reason or "Settlement failed"}
 
     except Exception as e:
         logger.error(f"x402 verify failed: {e}")
         return {"valid": False, "error": str(e)}
+
+
+@router.post("/x402/requirements")
+async def x402_requirements(
+    request: X402RequirementsRequest,
+    agent: AuthenticatedAgent = Depends(get_current_agent),
+    client: OmniClaw = Depends(get_omniclaw_client),
+):
+    """Build x402 payment requirements for a seller-side paid endpoint."""
+    try:
+        if not client._nano_client:
+            raise HTTPException(status_code=500, detail="Nanopayment client not initialized")
+
+        from omniclaw.protocols.nanopayments.middleware import GatewayMiddleware
+
+        seller_address = await client.get_payment_address(agent.wallet_id)
+        if not seller_address:
+            raise HTTPException(status_code=404, detail="Seller payment address not found")
+
+        middleware = GatewayMiddleware(
+            seller_address=seller_address,
+            nanopayment_client=client._nano_client,
+        )
+        body = await middleware._build_402_response(request.amount)
+        header_value = middleware._encode_requirements(body)
+        return {
+            "status_code": 402,
+            "detail": body,
+            "headers": {"PAYMENT-REQUIRED": header_value},
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"x402 requirements failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
