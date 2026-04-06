@@ -15,13 +15,9 @@ Run with:
 """
 
 import asyncio
-import json
-import pytest
 from decimal import Decimal
-from unittest.mock import AsyncMock, MagicMock, patch, PropertyMock
 
-import httpx
-
+import pytest
 
 # =============================================================================
 # REAL SDK IMPORTS (with error handling)
@@ -31,20 +27,7 @@ import httpx
 def import_sdk_modules():
     """Import SDK modules, handling missing dependencies."""
     try:
-        from omniclaw.core.types import (
-            Network,
-            PaymentMethod,
-            PaymentStatus,
-            PaymentResult,
-            WalletInfo,
-            WalletSetInfo,
-        )
-        from omniclaw.core.exceptions import (
-            InsufficientBalanceError,
-            PaymentError,
-            ValidationError,
-        )
-
+        import omniclaw  # noqa: F401
         return True
     except ImportError as e:
         print(f"Warning: Could not import all SDK modules: {e}")
@@ -307,9 +290,9 @@ class TestRouterFallback:
             try:
                 result = await adapter.execute()
                 print(f"✓ {adapter.name}: SUCCESS")
-                assert result["success"] == True
+                assert result["success"]
                 break
-            except Exception as e:
+            except Exception:
                 print(f"✗ {adapter.name}: FAILED, trying next...")
                 continue
 
@@ -336,7 +319,7 @@ class TestRouterFallback:
         # First adapter works - no fallback needed
         result = await adapters[0].execute()
         print(f"✓ {adapters[0].name}: SUCCESS (no fallback)")
-        assert result["success"] == True
+        assert result["success"]
 
     @pytest.mark.asyncio
     async def test_all_adapters_fail(self):
@@ -390,7 +373,7 @@ class TestIntentReservations:
         print(f"  Available: ${available}")
 
         assert available == Decimal("75.00")
-        print(f"✓ Funds reserved successfully")
+        print("✓ Funds reserved successfully")
 
     @pytest.mark.asyncio
     async def test_reserve_insufficient_funds(self):
@@ -408,7 +391,7 @@ class TestIntentReservations:
             print(f"✗ Cannot reserve ${reservation_request}")
             print(f"  Only have ${wallet_balance}")
 
-        assert can_reserve == False
+        assert not can_reserve
 
     @pytest.mark.asyncio
     async def test_release_reservation(self):
@@ -430,7 +413,7 @@ class TestIntentReservations:
         print(f"  After release: ${final_balance}")
 
         assert final_balance == initial_balance
-        print(f"✓ Reservation released")
+        print("✓ Reservation released")
 
     @pytest.mark.asyncio
     async def test_execute_reserved_payment(self):
@@ -450,7 +433,7 @@ class TestIntentReservations:
         print(f"  Balance after: ${final_balance}")
 
         assert final_balance == Decimal("70.00")
-        print(f"✓ Payment executed")
+        print("✓ Payment executed")
 
 
 class TestConcurrency:
@@ -479,8 +462,8 @@ class TestConcurrency:
 
         successful = sum(1 for r in results if r["success"])
 
-        print(f"  Initial balance: $100.00")
-        print(f"  5 concurrent payments of $25.00 each")
+        print("  Initial balance: $100.00")
+        print("  5 concurrent payments of $25.00 each")
         print(f"  Successful: {successful}/5")
         print(f"  Final balance: ${wallet_balance}")
 
@@ -517,8 +500,8 @@ class TestConcurrency:
 
         successful = sum(1 for r in results if r)
 
-        print(f"  3 wallets with $50 each")
-        print(f"  Each pays $25 concurrently")
+        print("  3 wallets with $50 each")
+        print("  Each pays $25 concurrently")
         print(f"  Successful: {successful}/3")
 
         assert successful == 3
@@ -635,7 +618,7 @@ class TestTransactionLedger:
         entry["status"] = "completed"
         entry["tx_hash"] = "0xabc123"
 
-        print(f"  Before: status=pending")
+        print("  Before: status=pending")
         print(f"  After: status={entry['status']}, tx={entry['tx_hash'][:10]}...")
 
         assert entry["status"] == "completed"
@@ -726,7 +709,7 @@ class TestX402SpecificScenarios:
         key = "unique-key-123"
 
         results = []
-        for i in range(3):
+        for _i in range(3):
             # Simulate duplicate requests
             results.append({"idempotency_key": key, "tx_id": "tx_abc"})
 

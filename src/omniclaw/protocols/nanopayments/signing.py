@@ -294,7 +294,7 @@ class EIP3009Signer:
         - Never log or expose the private key
         - Dispose of the signer when done to clear memory
         - In production, keys should be stored encrypted and only
-          decrypted when needed (see NanoKeyVault)
+          decrypted when needed (legacy vault)
     """
 
     def __init__(self, private_key: str) -> None:
@@ -360,7 +360,16 @@ class EIP3009Signer:
         INTERNAL: The raw private key hex string.
 
         This is for use by GatewayWalletManager for on-chain transaction signing.
-        Do NOT expose this to agents. Agents should use NanoKeyVault.sign().
+        Do NOT expose this to agents. Use the signing interface instead.
+        """
+        return self._private_key
+
+    @property
+    def raw_key(self) -> str:
+        """
+        The raw private key hex string (with 0x prefix).
+
+        This is used for on-chain operations like deposit/withdraw.
         """
         return self._private_key
 

@@ -4,8 +4,6 @@ Tests for nanopayments type definitions.
 Phase 1: Foundation
 """
 
-import pytest
-
 from omniclaw.protocols.nanopayments import (
     DepositResult,
     EIP3009Authorization,

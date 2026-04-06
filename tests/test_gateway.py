@@ -11,7 +11,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from omniclaw.core.types import (
-    FeeLevel,
     Network,
     PaymentMethod,
     PaymentStatus,
@@ -43,10 +42,13 @@ class TestGatewaySupports:
     """Test routing detection."""
 
     def test_supports_when_destination_chain_provided(self, adapter):
-        assert adapter.supports(
-            "0x742d35Cc6634C0532925a3b844Bc9e7595f1E123",
-            destination_chain=Network.ARB_SEPOLIA,
-        ) is True
+        assert (
+            adapter.supports(
+                "0x742d35Cc6634C0532925a3b844Bc9e7595f1E123",
+                destination_chain=Network.ARB_SEPOLIA,
+            )
+            is True
+        )
 
     def test_does_not_support_invalid_recipient(self, adapter):
         assert adapter.supports("0xabc", destination_chain=Network.ARB_SEPOLIA) is False

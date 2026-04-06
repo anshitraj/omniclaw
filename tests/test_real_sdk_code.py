@@ -13,14 +13,10 @@ Run with:
     pytest tests/test_real_sdk_code.py -v -s
 """
 
-import asyncio
 import json
-import pytest
 from decimal import Decimal
-from unittest.mock import AsyncMock, MagicMock, patch
 
-import httpx
-
+import pytest
 
 # =============================================================================
 # TEST REAL PAYMENT ROUTER
@@ -290,7 +286,7 @@ class TestRealLedgerLogic:
         entry["status"] = "completed"
         entry["tx_hash"] = "0xabc123"
 
-        print(f"  Before: pending")
+        print("  Before: pending")
         print(f"  After: {entry['status']}")
 
         assert entry["status"] == "completed"
@@ -392,9 +388,9 @@ class TestRealFundLock:
         result3 = await lock.acquire("w1", Decimal("75"))
         print(f"  After release: {'✓ SUCCESS' if result3 else '✗ FAILED'}")
 
-        assert result1 == True
-        assert result2 == False
-        assert result3 == True
+        assert result1
+        assert not result2
+        assert result3
 
 
 # =============================================================================
@@ -471,7 +467,7 @@ class TestRealX402Logic:
         print(f"  Accepts: {[a['scheme'] for a in accepts]}")
         print(f"  Supports Circle: {supports_circle}")
 
-        assert supports_circle == True
+        assert supports_circle
 
     def test_network_matching(self):
         """Test network matching logic."""
@@ -519,7 +515,7 @@ class TestRealNanopaymentLogic:
         print(f"  Wallet has gateway: {wallet_has_gateway}")
         print(f"  → Use nanopayment: {use_nanopayment}")
 
-        assert use_nanopayment == True
+        assert use_nanopayment
 
     def test_fallback_to_basic_when_no_gateway(self):
         """Test fallback when wallet has no gateway balance."""
@@ -539,7 +535,7 @@ class TestRealNanopaymentLogic:
         print(f"  → Use nanopayment: {use_nanopayment}")
         print(f"  → Fall back to basic x402: {not use_nanopayment}")
 
-        assert use_nanopayment == False
+        assert not use_nanopayment
 
 
 # =============================================================================

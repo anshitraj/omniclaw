@@ -4,11 +4,10 @@ Real end-to-end test with mock facilitator server.
 This tests the actual HTTP flow to verify the facilitator integration works.
 """
 
-import pytest
-import asyncio
-from unittest.mock import patch, AsyncMock
 import httpx
-from omniclaw.seller import create_seller, create_facilitator
+import pytest
+
+from omniclaw.seller import create_facilitator, create_seller
 
 
 class MockFacilitatorServer:
@@ -130,8 +129,6 @@ async def test_facilitator_settle_endpoint():
 
 def test_all_facilitators_have_correct_interface():
     """Verify all facilitators implement the same interface."""
-
-    from omniclaw.seller import SUPPORTED_FACILITATORS
 
     providers = ["circle", "coinbase", "ordern", "rbx", "thirdweb"]
 

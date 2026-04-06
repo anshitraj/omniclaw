@@ -17,20 +17,15 @@ Note: These tests require:
 - Optional: Circle API key for nanopayment tests
 """
 
-import asyncio
 import json
 import os
 import signal
 import subprocess
 import sys
 import time
-import pytest
-from decimal import Decimal
-from typing import Optional
-from unittest.mock import patch
 
 import httpx
-
+import pytest
 
 # =============================================================================
 # TEST SERVER CONFIGURATION
@@ -51,7 +46,7 @@ def is_server_running() -> bool:
         result = sock.connect_ex((SERVER_HOST, SERVER_PORT))
         sock.close()
         return result == 0
-    except:
+    except Exception:
         return False
 
 
@@ -263,7 +258,7 @@ class TestFreeEndpoints:
             try:
                 response = httpx.get(f"{SERVER_URL}{route}", timeout=5.0)
                 print(f"  {route}: {response.status_code}")
-            except Exception as e:
+            except Exception:
                 print(f"  {route}: Not found")
 
 
@@ -291,7 +286,7 @@ class TestFullPaymentFlow:
         header = response.headers.get("payment-required")
         assert header is not None
 
-        print(f"  Got 402 with payment-required header ✓")
+        print("  Got 402 with payment-required header ✓")
 
     def test_flow_2_parse_402_and_detect_scheme(self):
         """Step 2: Parse 402 and detect payment scheme."""
@@ -317,7 +312,7 @@ class TestFullPaymentFlow:
         # Our test server only supports "exact" (basic x402)
         assert "exact" in schemes
 
-        print(f"  Detected scheme: exact ✓")
+        print("  Detected scheme: exact ✓")
 
     def test_flow_3_determine_payment_method(self):
         """Step 3: Determine payment method based on accepts."""
@@ -345,9 +340,9 @@ class TestFullPaymentFlow:
 
         # Our test server only supports basic
         if supports_basic and not supports_circle:
-            print(f"  → Will use: Basic x402 (on-chain settlement)")
+            print("  → Will use: Basic x402 (on-chain settlement)")
         elif supports_circle:
-            print(f"  → Will use: Circle nanopayment (gasless)")
+            print("  → Will use: Circle nanopayment (gasless)")
 
         assert supports_basic
 
@@ -369,7 +364,7 @@ class TestFullPaymentFlow:
         # Should still be 402 (payment invalid)
         assert response.status_code == 402
 
-        print(f"  Invalid payment rejected ✓")
+        print("  Invalid payment rejected ✓")
 
 
 # =============================================================================
@@ -402,10 +397,7 @@ class TestSmartRouting:
         supports_circle = any(a.get("scheme") == "GatewayWalletBatched" for a in accepts)
         buyer_has_gateway = False
 
-        if supports_circle and buyer_has_gateway:
-            method = "Circle Nanopayment"
-        else:
-            method = "Basic x402"
+        method = "Circle Nanopayment" if supports_circle and buyer_has_gateway else "Basic x402"
 
         print(f"  Seller accepts: {[a['scheme'] for a in accepts]}")
         print(f"  Buyer has Circle: {buyer_has_gateway}")
@@ -548,7 +540,7 @@ class TestErrorScenarios:
 
         try:
             # Very short timeout
-            response = httpx.get(f"{SERVER_URL}/weather", timeout=0.001)
+            httpx.get(f"{SERVER_URL}/weather", timeout=0.001)
         except httpx.TimeoutException:
             print("  ✓ Timeout handled correctly")
         except Exception as e:
@@ -576,7 +568,7 @@ class TestErrorScenarios:
 
         # Try to connect to non-existent server
         try:
-            response = httpx.get("http://127.0.0.1:9999/health", timeout=2.0)
+            httpx.get("http://127.0.0.1:9999/health", timeout=2.0)
         except httpx.ConnectError:
             print("  ✓ Connection error handled correctly")
         except Exception as e:
@@ -608,7 +600,7 @@ class TestPerformance:
         times = []
         for _ in range(5):
             start = time.time()
-            response = httpx.get(f"{SERVER_URL}/weather", timeout=5.0)
+            httpx.get(f"{SERVER_URL}/weather", timeout=5.0)
             elapsed = time.time() - start
             times.append(elapsed)
             print(f"  Response time: {elapsed * 1000:.2f}ms")

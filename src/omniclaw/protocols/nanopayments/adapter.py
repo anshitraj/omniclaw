@@ -46,6 +46,7 @@ from omniclaw.protocols.nanopayments.exceptions import (
     UnsupportedNetworkError,
     UnsupportedSchemeError,
 )
+from omniclaw.protocols.nanopayments.signing import EIP3009Signer
 from omniclaw.protocols.nanopayments.types import (
     NanopaymentResult,
     PaymentPayload,
@@ -54,7 +55,12 @@ from omniclaw.protocols.nanopayments.types import (
 )
 
 if TYPE_CHECKING:
-    from omniclaw.protocols.nanopayments.vault import NanoKeyVault
+    from omniclaw.protocols.nanopayments.types import (
+        PaymentRequirementsKind,
+    )
+    from omniclaw.protocols.nanopayments.types import (
+        ResourceInfo as ResourceInfoType,
+    )
 
 logger = logging.getLogger(__name__)
 
@@ -199,9 +205,10 @@ class NanopaymentAdapter:
     - Idempotency: Uses EIP-3009 nonce as idempotency key for safe retries
 
     Args:
-        vault: NanoKeyVault for signing payments.
+        signer: EIP3009Signer for signing payments (from raw private key).
         nanopayment_client: NanopaymentClient for settling payments.
         http_client: Shared httpx.AsyncClient for HTTP requests.
+        network: CAIP-2 network identifier.
         auto_topup_enabled: If True, auto-deposit when balance is low.
         auto_topup_threshold: Threshold in USDC decimal (e.g. "1.00").
         auto_topup_amount: Amount to deposit when topping up.
@@ -212,9 +219,10 @@ class NanopaymentAdapter:
 
     def __init__(
         self,
-        vault: NanoKeyVault,
+        signer: EIP3009Signer,
         nanopayment_client: NanopaymentClient,
         http_client: httpx.AsyncClient,
+        network: str = "eip155:5042002",
         auto_topup_enabled: bool = True,
         auto_topup_threshold: str = DEFAULT_GATEWAY_AUTO_TOPUP_THRESHOLD,
         auto_topup_amount: str = DEFAULT_GATEWAY_AUTO_TOPUP_AMOUNT,
@@ -223,7 +231,8 @@ class NanopaymentAdapter:
         retry_base_delay: float = 0.5,
         strict_settlement: bool = True,
     ) -> None:
-        self._vault = vault
+        self._signer = signer
+        self._network = network
         self._client = nanopayment_client
         self._http = http_client
         self._auto_topup = auto_topup_enabled
@@ -233,6 +242,85 @@ class NanopaymentAdapter:
         self._retry_attempts = retry_attempts
         self._retry_base_delay = retry_base_delay
         self._strict_settlement = strict_settlement
+
+    @property
+    def address(self) -> str:
+        """
+        The EOA address derived from the private key.
+
+        This is the address that will be recorded as the payer
+        in Circle Gateway's settlement records.
+        """
+        return self._signer.address
+
+    @property
+    def signer(self) -> EIP3009Signer:
+        """
+        The EIP3009Signer instance for signing payments.
+
+        This is used internally for on-chain operations like deposits.
+        """
+        return self._signer
+
+    @classmethod
+    def from_private_key(
+        cls,
+        private_key: str,
+        nanopayment_client: NanopaymentClient,
+        http_client: httpx.AsyncClient,
+        network: str = "eip155:5042002",
+        **kwargs: Any,
+    ) -> NanopaymentAdapter:
+        """
+        Create adapter from a raw private key.
+
+        Args:
+            private_key: Raw EOA private key hex.
+            nanopayment_client: Circle Gateway API client.
+            http_client: Shared httpx client.
+            network: CAIP-2 network (default Arc Testnet).
+            **kwargs: Passed to __init__ (e.g. auto_topup_enabled).
+        """
+        signer = EIP3009Signer(private_key)
+        return cls(
+            signer=signer,
+            nanopayment_client=nanopayment_client,
+            http_client=http_client,
+            network=network,
+            **kwargs,
+        )
+
+    # -------------------------------------------------------------------------
+    # Internal helpers
+    # -------------------------------------------------------------------------
+
+    def _get_address(self) -> str:
+        """Get payer EOA address from signer."""
+        return self._signer.address
+
+    def _sign(
+        self,
+        requirements: PaymentRequirementsKind,
+        resource: ResourceInfoType | None = None,
+        amount_atomic: int | None = None,
+    ) -> PaymentPayload:
+        """Sign a payment using the EIP-3009 signer."""
+        if amount_atomic is None:
+            amount_atomic = int(requirements.amount)
+        payload = self._signer.sign_transfer_with_authorization(
+            requirements=requirements,
+            amount_atomic=amount_atomic,
+        )
+        # Attach resource info if provided
+        if resource is not None:
+            payload = PaymentPayload(
+                x402_version=payload.x402_version,
+                scheme=payload.scheme,
+                network=payload.network,
+                payload=payload.payload,
+                resource=resource,
+            )
+        return payload
 
     # -------------------------------------------------------------------------
     # x402 URL payment
@@ -244,7 +332,6 @@ class NanopaymentAdapter:
         method: str = "GET",
         headers: dict | None = None,
         body: bytes | None = None,
-        nano_key_alias: str | None = None,
     ) -> NanopaymentResult:
         """
         Pay for a URL-based resource via x402 with Gateway batching.
@@ -257,7 +344,7 @@ class NanopaymentAdapter:
         5. If not found: raise UnsupportedSchemeError (router falls back)
         6. Get verifying_contract from NanopaymentClient if not in requirements
         7. Auto-topup if balance is low
-        8. Call vault.sign() to create signed PaymentPayload
+        8. Call signer to create signed PaymentPayload
         9. Retry request with PAYMENT-SIGNATURE header
         10. Settle payment with Circle Gateway
         11. Return NanopaymentResult
@@ -271,7 +358,7 @@ class NanopaymentAdapter:
             method: HTTP method (GET, POST, etc.).
             headers: Additional headers for the request.
             body: Request body for POST/PUT methods.
-            nano_key_alias: Which vault key to use.
+
 
         Returns:
             NanopaymentResult with payment details and response data.
@@ -400,23 +487,23 @@ class NanopaymentAdapter:
                 verifying_contract=verifying_contract,
             ),
         )
-        updated_req = PaymentRequirements(
-            x402_version=requirements.x402_version,
-            accepts=(updated_kind,),
+        # Step 6: Check balance - FAIL if insufficient
+        payer_address = self._get_address()
+        balance = await self._client.check_balance(
+            address=payer_address,
+            network=gateway_kind.network,
         )
-
-        # Step 6: Auto-topup
-        if self._auto_topup:
-            try:
-                await self._check_and_topup(alias=nano_key_alias)
-            except Exception as exc:
-                logger.warning(f"Auto-topup failed: {exc}. Proceeding with payment anyway.")
+        payment_amount_atomic = int(updated_kind.amount)
+        if balance.available < payment_amount_atomic:
+            raise InsufficientBalanceError(
+                reason=f"Insufficient balance: available {balance.available}, required {payment_amount_atomic}",
+                payer=payer_address,
+            )
 
         # Step 7: Sign payment (pass resource for Circle Gateway)
-        payer_address = await self._vault.get_address(alias=nano_key_alias)
-        payload = await self._vault.sign(
+        payer_address = self._get_address()
+        payload = self._sign(
             requirements=updated_kind,
-            alias=nano_key_alias,
             resource=resource,
         )
 
@@ -448,59 +535,44 @@ class NanopaymentAdapter:
                 response_body=str(exc),
             ) from exc
 
-        # Step 9: Settle payment with Circle Gateway
+        # Step 9: Seller-side settlement via PAYMENT-RESPONSE header (x402 v2)
         content_delivered = _is_success_status(retry_resp.status_code)
-        settle_resp = None
-        settlement_error: str | None = None
+        payment_response = retry_resp.headers.get("payment-response") or retry_resp.headers.get(
+            "PAYMENT-RESPONSE"
+        )
+        settlement_succeeded = False
         transaction = ""
-
-        # Check circuit breaker before attempting settlement
-        if not self._circuit_breaker.is_available():
-            settlement_error = "Circuit breaker is open"
-            logger.warning(
-                f"Nanopayment circuit breaker is open. "
-                f"payer={payer_address}, amount={updated_kind.amount}"
-            )
-            if not content_delivered:
-                raise CircuitOpenError(recovery_seconds=self._circuit_breaker._recovery_seconds)
-
-        try:
-            settle_resp = await self._settle_with_retry(
-                payload=payload,
-                requirements=updated_req,
-            )
-            transaction = settle_resp.transaction or "" if settle_resp else ""
-            if settle_resp:
-                self._circuit_breaker.record_success()
-        except (CircuitOpenError, GatewayTimeoutError, GatewayConnectionError) as exc:
-            # Circuit breaker or transient error after all retries exhausted
-            settlement_error = str(exc)
-            self._circuit_breaker.record_failure()
-            if not content_delivered:
+        if payment_response:
+            try:
+                decoded = base64.b64decode(payment_response)
+                data = json.loads(decoded)
+                settlement_succeeded = bool(data.get("success"))
+                transaction = str(data.get("transaction") or "")
+            except Exception as exc:
+                if self._strict_settlement and not content_delivered:
+                    raise SettlementError(
+                        reason=f"Invalid PAYMENT-RESPONSE header: {exc}",
+                        transaction=None,
+                        payer=payer_address,
+                    ) from exc
+                logger.warning(
+                    "Invalid PAYMENT-RESPONSE header (payer=%s): %s",
+                    payer_address,
+                    exc,
+                )
+        else:
+            if self._strict_settlement and not content_delivered:
                 raise SettlementError(
-                    reason=f"Settlement failed after retries: {settlement_error}",
+                    reason="Missing PAYMENT-RESPONSE header",
                     transaction=None,
                     payer=payer_address,
-                ) from exc
+                )
             logger.warning(
-                "Settlement warning after content delivery: %s (payer=%s)",
-                settlement_error,
-                payer_address,
-            )
-        except SettlementError as exc:
-            settlement_error = str(exc)
-            if isinstance(exc, (NonceReusedError, InsufficientBalanceError)):
-                raise
-            if self._strict_settlement and not content_delivered:
-                raise
-            logger.warning(
-                "Settlement warning in non-strict mode: %s (payer=%s)",
-                settlement_error,
+                "Missing PAYMENT-RESPONSE header (payer=%s)",
                 payer_address,
             )
 
         # Step 10: Determine final success status
-        settlement_succeeded = settle_resp is not None and settle_resp.success
         # If content was delivered, we treat the user request as successful even when
         # settlement is delayed/degraded. Reconciliation can retry settlement later.
         final_success = (
@@ -534,7 +606,6 @@ class NanopaymentAdapter:
         seller_address: str,
         amount_usdc: str,
         network: str,
-        nano_key_alias: str | None = None,
     ) -> NanopaymentResult:
         """
         Pay a direct address via Gateway nanopayment.
@@ -548,7 +619,7 @@ class NanopaymentAdapter:
         2. Get verifying contract and USDC address from client
         3. Build PaymentRequirements from scratch
         4. Auto-topup if balance is low
-        5. Call vault.sign() to create signed PaymentPayload
+        5. Call signer to create signed PaymentPayload
         6. Call NanopaymentClient.settle()
         7. Return NanopaymentResult
 
@@ -556,7 +627,7 @@ class NanopaymentAdapter:
             seller_address: The seller's EOA address.
             amount_usdc: Amount in USDC decimal string (e.g. "0.001").
             network: CAIP-2 network identifier.
-            nano_key_alias: Which vault key to use.
+
 
         Returns:
             NanopaymentResult with payment details.
@@ -594,18 +665,22 @@ class NanopaymentAdapter:
             accepts=(kind,),
         )
 
-        # Step 3: Auto-topup
-        if self._auto_topup:
-            try:
-                await self._check_and_topup(alias=nano_key_alias)
-            except Exception as exc:
-                logger.warning(f"Auto-topup failed: {exc}. Proceeding with payment anyway.")
+        # Step 3: Check balance - FAIL if insufficient
+        payer_address = self._get_address()
+        balance = await self._client.check_balance(
+            address=payer_address,
+            network=network,
+        )
+        if balance.available < amount_atomic:
+            raise InsufficientBalanceError(
+                reason=f"Insufficient balance: available {balance.available}, required {amount_atomic}",
+                payer=payer_address,
+            )
 
         # Step 4: Get payer address
-        payer_address = await self._vault.get_address(alias=nano_key_alias)
+        payer_address = self._get_address()
 
         # Step 5: Build resource info (required by Circle Gateway)
-        # For direct payments, use seller address as resource identifier
         from omniclaw.protocols.nanopayments.types import ResourceInfo
 
         resource = ResourceInfo(
@@ -615,10 +690,9 @@ class NanopaymentAdapter:
         )
 
         # Step 6: Sign
-        payload = await self._vault.sign(
+        payload = self._sign(
             requirements=kind,
             amount_atomic=amount_atomic,
-            alias=nano_key_alias,
             resource=resource,
         )
 
@@ -765,7 +839,6 @@ class NanopaymentAdapter:
 
     async def _check_and_topup(
         self,
-        alias: str | None = None,
         threshold: str | None = None,
         topup_amount: str | None = None,
     ) -> bool:
@@ -788,7 +861,11 @@ class NanopaymentAdapter:
         topup_amount = topup_amount or self._topup_amount
 
         try:
-            balance = await self._vault.get_balance(alias=alias)
+            payer_address = self._get_address()
+            balance = await self._client.check_balance(
+                address=payer_address,
+                network=self._network,
+            )
         except Exception as exc:
             logger.warning(f"Failed to check balance for auto-topup: {exc}")
             return False
@@ -901,8 +978,8 @@ class NanopaymentProtocolAdapter:
         return False
 
     def get_priority(self) -> int:
-        """Priority 10 — checked before other adapters (default 100)."""
-        return 10
+        """Priority 5 — must run before generic x402 for URL payments."""
+        return 5
 
     async def execute(
         self,
@@ -916,7 +993,6 @@ class NanopaymentProtocolAdapter:
         source_network: str | None = None,
         wait_for_completion: bool = False,
         timeout_seconds: float | None = None,
-        nano_key_alias: str | None = None,
         **kwargs: Any,
     ) -> PaymentResult:
         """
@@ -926,7 +1002,6 @@ class NanopaymentProtocolAdapter:
             wallet_id: Source wallet ID (used for ledger/tracking only).
             recipient: URL or EVM address.
             amount: Payment amount in USDC decimal.
-            nano_key_alias: Which vault key to use for signing.
             **kwargs: Additional parameters (ignored).
 
         Returns:
@@ -937,18 +1012,16 @@ class NanopaymentProtocolAdapter:
             if _is_url(recipient):
                 result = await self._adapter.pay_x402_url(
                     url=recipient,
-                    nano_key_alias=nano_key_alias,
                 )
             else:
                 # Address payment below micro threshold
                 network = destination_chain or source_network
                 if not network:
-                    network = await self._adapter._vault.get_network(alias=nano_key_alias)
+                    network = self._adapter._network
                 result = await self._adapter.pay_direct(
                     seller_address=recipient,
                     amount_usdc=str(amount),
                     network=str(network),
-                    nano_key_alias=nano_key_alias,
                 )
 
             return PaymentResult(
@@ -972,6 +1045,7 @@ class NanopaymentProtocolAdapter:
                     )
                 ),
                 error=None if result.success else "Nanopayment settlement failed",
+                resource_data=result.response_data,
                 metadata={
                     "nanopayment": True,
                     "payer": result.payer,

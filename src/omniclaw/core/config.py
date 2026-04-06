@@ -26,7 +26,7 @@ class Config:
     """SDK configuration."""
 
     circle_api_key: str
-    entity_secret: str
+    entity_secret: str = ""
     network: Network = Network.ETH
     storage_backend: str = "memory"
     redis_url: str | None = None
@@ -88,11 +88,8 @@ class Config:
     nanopayments_micro_threshold: str = "1.00"
     """Amount below which nanopayments are used instead of standard transfer."""
 
-    nanopayments_default_key_alias: str | None = None
-    """Default NanoKeyVault key alias for agents."""
-
-    nanopayments_default_network: str | None = None
-    """Default CAIP-2 network for nanopayments (e.g., 'eip155:1' for mainnet, 'eip155:11155111' for Sepolia)."""
+    nanopayments_private_key: str | None = None
+    """Raw EOA private key for direct nanopayment signing (no vault needed)."""
 
     payment_strict_settlement: bool = True
     """If true, success=True is emitted only for irreversible settlement."""
@@ -103,8 +100,13 @@ class Config:
     def __post_init__(self) -> None:
         if not self.circle_api_key:
             raise ValueError("circle_api_key is required")
-        if not self.entity_secret:
-            raise ValueError("entity_secret is required")
+        if not self.entity_secret and not self.nanopayments_private_key:
+            import logging
+
+            logging.getLogger(__name__).warning(
+                "Neither entity_secret nor nanopayments_private_key is set. "
+                "Nanopayment signing will not be available."
+            )
 
     @classmethod
     def from_env(cls, **overrides: Any) -> Config:
@@ -118,8 +120,11 @@ class Config:
         circle_api_key = override_or_env("circle_api_key", "CIRCLE_API_KEY") or _get_env_var(
             "CIRCLE_API_KEY", required=True
         )
-        entity_secret = override_or_env("entity_secret", "ENTITY_SECRET") or _get_env_var(
-            "ENTITY_SECRET", required=True
+        entity_secret = override_or_env("entity_secret", "ENTITY_SECRET", default="")
+
+        # Direct private key for nanopayments
+        nanopayments_private_key = override_or_env(
+            "nanopayments_private_key", "OMNICLAW_PRIVATE_KEY"
         )
 
         # Parse network from environment
@@ -182,12 +187,6 @@ class Config:
         nanopayments_micro_threshold = override_or_env(
             "nanopayments_micro_threshold", "OMNICLAW_NANOPAYMENTS_MICRO_THRESHOLD", "1.00"
         )
-        nanopayments_default_key_alias = override_or_env(
-            "nanopayments_default_key_alias", "OMNICLAW_NANOPAYMENTS_DEFAULT_KEY"
-        )
-        nanopayments_default_network = override_or_env(
-            "nanopayments_default_network", "OMNICLAW_NANOPAYMENTS_DEFAULT_NETWORK"
-        )
         payment_strict_settlement = (
             overrides.get("payment_strict_settlement")
             if "payment_strict_settlement" in overrides
@@ -204,7 +203,7 @@ class Config:
 
         return cls(
             circle_api_key=circle_api_key,  # type: ignore
-            entity_secret=entity_secret,  # type: ignore
+            entity_secret=entity_secret or "",  # type: ignore
             network=network,
             default_wallet_id=default_wallet_id,
             circle_api_base_url=overrides.get("circle_api_base_url", cls.circle_api_base_url),
@@ -233,8 +232,7 @@ class Config:
             nanopayments_topup_threshold=nanopayments_topup_threshold,
             nanopayments_topup_amount=nanopayments_topup_amount,
             nanopayments_micro_threshold=nanopayments_micro_threshold,
-            nanopayments_default_key_alias=nanopayments_default_key_alias,
-            nanopayments_default_network=nanopayments_default_network,
+            nanopayments_private_key=nanopayments_private_key,
             payment_strict_settlement=payment_strict_settlement,
             auto_reconcile_pending_settlements=auto_reconcile_pending_settlements,
             storage_backend=storage_backend,
@@ -270,8 +268,7 @@ class Config:
             "nanopayments_topup_threshold": self.nanopayments_topup_threshold,
             "nanopayments_topup_amount": self.nanopayments_topup_amount,
             "nanopayments_micro_threshold": self.nanopayments_micro_threshold,
-            "nanopayments_default_key_alias": self.nanopayments_default_key_alias,
-            "nanopayments_default_network": self.nanopayments_default_network,
+            "nanopayments_private_key": self.nanopayments_private_key,
             "payment_strict_settlement": self.payment_strict_settlement,
             "auto_reconcile_pending_settlements": self.auto_reconcile_pending_settlements,
             "storage_backend": self.storage_backend,

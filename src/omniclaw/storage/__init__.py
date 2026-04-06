@@ -4,16 +4,18 @@ Storage backends for OmniClaw.
 Provides pluggable persistence for ledger, guards, and other stateful components.
 
 Configuration via environment:
-    OMNICLAW_STORAGE_BACKEND=memory  # or 'redis'
+    OMNICLAW_STORAGE_BACKEND=file  # 'file', 'memory', or 'redis'
     OMNICLAW_REDIS_URL=redis://localhost:6379/0
+    OMNICLAW_STORAGE_DIR=~/.omniclaw/data  # for file storage
 
 Example:
-    >>> from omniclaw.storage import get_storage, InMemoryStorage, RedisStorage
+    >>> from omniclaw.storage import get_storage, InMemoryStorage, RedisStorage, FileStorage
     >>>
     >>> # Get storage from environment
     >>> storage = get_storage()
     >>>
     >>> # Or create specific backend
+    >>> storage = FileStorage()
     >>> storage = InMemoryStorage()
     >>> storage = RedisStorage(redis_url="redis://localhost:6379")
 """
@@ -36,6 +38,11 @@ try:
 except ImportError:
     RedisStorage = None  # type: ignore
 
+# Import and register FileStorage
+from omniclaw.storage.file import FileStorage
+
+register_storage_backend("file", FileStorage)
+
 
 def get_storage(backend_name: str | None = None) -> StorageBackend:
     """
@@ -57,7 +64,7 @@ def get_storage(backend_name: str | None = None) -> StorageBackend:
     import warnings
 
     if backend_name is None:
-        backend_name = os.environ.get("OMNICLAW_STORAGE_BACKEND", "memory")
+        backend_name = os.environ.get("OMNICLAW_STORAGE_BACKEND", "file")
 
     backend_class = get_storage_backend(backend_name)
 
@@ -78,15 +85,8 @@ def get_storage(backend_name: str | None = None) -> StorageBackend:
             )
         elif env not in ("", "test", "development", "dev"):
             warnings.warn(
-                f"Using memory storage backend with OMNICLAW_ENV={env}. "
+                f"Using memory storage with OMNICLAW_ENV={env}. "
                 "For production use, configure Redis: OMNICLAW_STORAGE_BACKEND=redis",
-                UserWarning,
-                stacklevel=2,
-            )
-        else:
-            warnings.warn(
-                "Using memory storage backend - state will be lost on process restart. "
-                "For production, use Redis: OMNICLAW_STORAGE_BACKEND=redis",
                 UserWarning,
                 stacklevel=2,
             )
@@ -97,6 +97,7 @@ def get_storage(backend_name: str | None = None) -> StorageBackend:
 __all__ = [
     "StorageBackend",
     "InMemoryStorage",
+    "FileStorage",
     "RedisStorage",
     "get_storage",
     "get_storage_backend",

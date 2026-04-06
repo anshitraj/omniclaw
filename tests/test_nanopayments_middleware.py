@@ -9,8 +9,8 @@ Tests verify:
 - Payment handling
 """
 
-import json
 import base64
+import json
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -32,7 +32,6 @@ from omniclaw.protocols.nanopayments.types import (
     PaymentPayloadInner,
     SupportedKind,
 )
-
 
 # =============================================================================
 # PARSE_PRICE TESTS

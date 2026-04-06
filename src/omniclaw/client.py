@@ -3,14 +3,15 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import contextvars
+import ipaddress
 import os
 import re
 import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlparse
 
 import httpx
 
@@ -43,6 +44,7 @@ from omniclaw.core.types import (
     TransactionInfo,
     WalletInfo,
     WalletSetInfo,
+    network_to_caip2,
 )
 from omniclaw.guards.base import PaymentContext
 from omniclaw.guards.manager import GuardManager
@@ -59,7 +61,6 @@ from omniclaw.protocols.nanopayments import (
     DepositResult,
     GatewayBalance,
     GatewayMiddleware,
-    NanoKeyVault,
     NanopaymentAdapter,
     NanopaymentClient,
     NanopaymentNotInitializedError,
@@ -97,7 +98,7 @@ class OmniClaw:
         self,
         circle_api_key: str | None = None,
         entity_secret: str | None = None,
-        network: Network = Network.ARC_TESTNET,
+        network: Network | None = None,
         log_level: int | str | None = None,
         trust_policy: TrustPolicy | str | None = None,
         rpc_url: str | None = None,
@@ -187,7 +188,6 @@ class OmniClaw:
         )
 
         # Initialize Nanopayments fields FIRST (before router registration uses them)
-        self._nano_vault: NanoKeyVault | None = None
         self._nano_client: NanopaymentClient | None = None
         self._nano_adapter: NanopaymentAdapter | None = None
         self._nano_http: httpx.AsyncClient | None = None
@@ -266,34 +266,43 @@ class OmniClaw:
                 },
             )
 
+    def _is_allowed_insecure_http(self, url: str) -> bool:
+        """Allow HTTP URLs only for localhost/private networks in non-production."""
+        if not url.startswith("http://"):
+            return False
+        parsed = urlparse(url)
+        host = parsed.hostname or ""
+        if host in {"localhost", "127.0.0.1"}:
+            return True
+
+        env = os.environ.get("OMNICLAW_ENV", "development").lower()
+        if env in {"prod", "production", "mainnet"}:
+            return False
+
+        try:
+            ip = ipaddress.ip_address(host)
+            return ip.is_private or ip.is_loopback or ip.is_link_local
+        except ValueError:
+            return host.endswith(".local")
+
+    def _nanopayment_network(self) -> str:
+        """Derive CAIP-2 network for nanopayments from OMNICLAW_NETWORK."""
+        network = network_to_caip2(self._config.network)
+        if not network:
+            raise ConfigurationError(
+                "Nanopayments network is not configured. Set OMNICLAW_NETWORK to an EVM chain."
+            )
+        return network
+
     def _init_nanopayments(self) -> None:
-        """Initialize nanopayments components (NanoKeyVault, NanopaymentClient, NanopaymentAdapter)."""
+        """Initialize nanopayments components (direct private key only)."""
         if not self._config.nanopayments_enabled:
             return
 
         try:
-            # Pre-import and warmup Circle SDK to resolve all lazy modules before
-            # any parallel threads (asyncio.to_thread) try to import concurrently.
-            # The Circle Python SDK uses a lazy module loader that breaks when
-            # multiple threads trigger concurrent resolution of the same lazy module.
-            try:
-                from circle.web3 import developer_controlled_wallets, utils
-
-                warmup_client = utils.init_developer_controlled_wallets_client(
-                    api_key=self._config.circle_api_key,
-                    entity_secret=self._config.entity_secret,
-                )
-                # Force resolution of all lazy submodules by instantiating API classes
-                developer_controlled_wallets.WalletSetsApi(warmup_client)
-                developer_controlled_wallets.WalletsApi(warmup_client)
-                developer_controlled_wallets.TransactionsApi(warmup_client)
-            except Exception as warmup_exc:
-                self._logger.debug(f"Circle SDK warmup: {warmup_exc}")
-
             import httpx
 
             from omniclaw.protocols.nanopayments import (
-                NanoKeyVault,
                 NanopaymentAdapter,
                 NanopaymentClient,
             )
@@ -305,28 +314,30 @@ class OmniClaw:
                 environment=self._config.nanopayments_environment,
                 api_key=self._config.circle_api_key,
             )
-            self._nano_vault = NanoKeyVault(
-                entity_secret=self._config.entity_secret,
-                storage_backend=self._storage,
-                circle_api_key=self._config.circle_api_key,
-                nanopayments_environment=self._config.nanopayments_environment,
-                default_network=self._config.nanopayments_default_network,
-            )
-            self._nano_adapter = NanopaymentAdapter(
-                vault=self._nano_vault,
+
+            if not self._config.nanopayments_private_key:
+                self._logger.warning(
+                    "nanopayments_private_key not configured. Nanopayment signing disabled."
+                )
+                self._nano_adapter = None
+                return
+
+            network = self._nanopayment_network()
+            self._nano_adapter = NanopaymentAdapter.from_private_key(
+                private_key=self._config.nanopayments_private_key,
                 nanopayment_client=self._nano_client,
                 http_client=self._nano_http,
+                network=network,
                 auto_topup_enabled=self._config.nanopayments_auto_topup,
                 auto_topup_threshold=self._config.nanopayments_topup_threshold,
                 auto_topup_amount=self._config.nanopayments_topup_amount,
                 strict_settlement=self._config.payment_strict_settlement,
             )
-            self._logger.info("Nanopayments initialized (EIP-3009 Circle Gateway)")
+            self._logger.info(f"Nanopayments initialized (direct private key, network={network})")
         except Exception as e:
             self._logger.warning(
                 f"Nanopayments initialization failed: {e}. Disabling nanopayments."
             )
-            self._nano_vault = None
             self._nano_client = None
             self._nano_adapter = None
 
@@ -368,15 +379,6 @@ class OmniClaw:
     # -------------------------------------------------------------------------
     # Nanopayments (EIP-3009 Circle Gateway)
     # -------------------------------------------------------------------------
-
-    @property
-    def vault(self) -> NanoKeyVault | None:
-        """
-        Get the NanoKeyVault for managing EOA keys used in nanopayments.
-
-        Returns None if nanopayments are not initialized.
-        """
-        return self._nano_vault
 
     @property
     def nanopayment_adapter(self) -> NanopaymentAdapter | None:
@@ -424,16 +426,15 @@ class OmniClaw:
 
         # For Circle, we need nanopayments initialized
         if (facilitator is None or facilitator == "circle") and (
-            not self._nano_client or not self._nano_vault
+            not self._nano_client or not self._nano_adapter
         ):
             raise NanopaymentNotInitializedError()
 
         # If no seller_address provided, try to get from wallet
         if not seller_address:
-            if self._nano_vault:
-                # Try to get from existing wallet
-                with contextlib.suppress(Exception):
-                    seller_address = await self._nano_vault.get_address(alias=None)
+            if self._nano_adapter:
+                # Direct private key mode: use adapter address
+                seller_address = self._nano_adapter.address
             if not seller_address:
                 raise ValueError(
                     "seller_address is required. "
@@ -553,79 +554,6 @@ class OmniClaw:
         return info
 
     # -------------------------------------------------------------------------
-    # Key management (delegates to NanoKeyVault)
-    # -------------------------------------------------------------------------
-
-    async def add_key(self, alias: str, private_key: str) -> str:
-        """
-        Import an existing EOA private key into the NanoKeyVault.
-
-        The key is encrypted and stored securely. Raw private keys are never
-        exposed to agents — they receive only the alias string.
-
-        Args:
-            alias: Unique identifier for this key (e.g. "alice-nano").
-            private_key: EOA private key hex (with or without 0x prefix).
-
-        Returns:
-            The EOA address derived from the key.
-
-        Raises:
-            DuplicateKeyAliasError: If a key with this alias already exists.
-            InvalidPrivateKeyError: If the private key is invalid.
-        """
-        if not self._nano_vault:
-            raise NanopaymentNotInitializedError()
-        return await self._nano_vault.add_key(alias, private_key)
-
-    async def generate_key(self, alias: str, network: str | None = None) -> str:
-        """
-        Generate a new EOA keypair and store it encrypted in the vault.
-
-        The operator must fund the generated address with USDC before
-        it can be used for nanopayments.
-
-        Args:
-            alias: Unique identifier for this key.
-            network: CAIP-2 network for this key (e.g. 'eip155:5042002').
-                     If None, uses the default network for the environment.
-
-        Returns:
-            The new EOA address.
-
-        Raises:
-            DuplicateKeyAliasError: If a key with this alias already exists.
-        """
-        if not self._nano_vault:
-            raise NanopaymentNotInitializedError()
-        return await self._nano_vault.generate_key(alias, network=network)
-
-    async def set_default_key(self, alias: str) -> None:
-        """
-        Set the default nanopayment key for agents that don't specify one.
-
-        Args:
-            alias: The key alias to set as default.
-
-        Raises:
-            KeyNotFoundError: If no key with this alias exists.
-        """
-        if not self._nano_vault:
-            raise NanopaymentNotInitializedError()
-        await self._nano_vault.set_default_key(alias)
-
-    async def list_keys(self) -> list[str]:
-        """
-        List all key aliases in the vault (safe for operator use).
-
-        Returns:
-            List of key aliases. Does NOT return the actual keys.
-        """
-        if not self._nano_vault:
-            return []
-        return await self._nano_vault.list_keys()
-
-    # -------------------------------------------------------------------------
     # Gateway Wallet management (on-chain deposit/withdraw)
     # -------------------------------------------------------------------------
 
@@ -634,6 +562,8 @@ class OmniClaw:
         wallet_id: str,
         amount_usdc: str,
         network: str | None = None,
+        check_gas: bool = False,
+        skip_if_insufficient_gas: bool = True,
     ) -> DepositResult:
         """
         Deposit USDC into the Circle Gateway Wallet for nanopayment use.
@@ -646,6 +576,8 @@ class OmniClaw:
             amount_usdc: Amount in USDC decimal (e.g. "10.00").
             network: CAIP-2 network (e.g. 'eip155:5042002').
                      Defaults to config nanopayments_environment.
+            check_gas: Whether to check gas balance before deposit. Default False.
+            skip_if_insufficient_gas: Skip deposit if insufficient gas. Default True.
 
         Returns:
             DepositResult with approval_tx_hash and deposit_tx_hash.
@@ -654,21 +586,22 @@ class OmniClaw:
             NanopaymentNotInitializedError: If nanopayments are disabled.
             KeyNotFoundError: If the key alias doesn't exist.
         """
-        if not self._nano_vault or not self._nano_client:
+        if not self._nano_adapter or not self._nano_client:
             raise NanopaymentNotInitializedError()
 
         from omniclaw.protocols.nanopayments.wallet import GatewayWalletManager
 
-        key_alias = f"wallet-{wallet_id}"
-        raw_key = await self._nano_vault.get_raw_key(alias=key_alias)
-        net = network or await self._nano_vault.get_network(alias=key_alias)
+        private_key = self._nano_adapter.signer.raw_key
+        net = network or self._nanopayment_network()
         manager = GatewayWalletManager(
-            private_key=raw_key,
+            private_key=private_key,
             network=net,
             rpc_url=self._config.rpc_url or "",
             nanopayment_client=self._nano_client,
         )
-        return await manager.deposit(amount_usdc)
+        return await manager.deposit(
+            amount_usdc, check_gas=check_gas, skip_if_insufficient_gas=skip_if_insufficient_gas
+        )
 
     async def withdraw_from_gateway(
         self,
@@ -697,16 +630,15 @@ class OmniClaw:
         Raises:
             NanopaymentNotInitializedError: If nanopayments are disabled.
         """
-        if not self._nano_vault or not self._nano_client:
+        if not self._nano_adapter or not self._nano_client:
             raise NanopaymentNotInitializedError()
 
         from omniclaw.protocols.nanopayments.wallet import GatewayWalletManager
 
-        key_alias = f"wallet-{wallet_id}"
-        raw_key = await self._nano_vault.get_raw_key(alias=key_alias)
-        net = network or await self._nano_vault.get_network(alias=key_alias)
+        private_key = self._nano_adapter.signer.raw_key
+        net = network or self._nanopayment_network()
         manager = GatewayWalletManager(
-            private_key=raw_key,
+            private_key=private_key,
             network=net,
             rpc_url=self._config.rpc_url or "",
             nanopayment_client=self._nano_client,
@@ -717,27 +649,69 @@ class OmniClaw:
             recipient=recipient,
         )
 
+    async def get_gateway_balance_for_address(
+        self,
+        address: str,
+    ) -> GatewayBalance:
+        """Get Gateway balance for an arbitrary address."""
+        if not self._nano_client:
+            raise NanopaymentNotInitializedError()
+
+        network = self._nanopayment_network()
+        balance = await self._nano_client.check_balance(address=address, network=network)
+        return GatewayBalance(
+            total=balance.total,
+            available=balance.available,
+            formatted_total=f"{balance.total / 1e6} USDC",
+            formatted_available=f"{balance.available / 1e6} USDC",
+        )
+
     async def get_gateway_balance(
         self,
         wallet_id: str,
     ) -> GatewayBalance:
-        """
-        Get the Gateway wallet balance for a wallet.
-
-        Args:
-            wallet_id: The wallet ID to check gateway balance for.
-
-        Returns:
-            GatewayBalance with total, available, and formatted amounts.
-
-        Raises:
-            NanopaymentNotInitializedError: If nanopayments are disabled.
-        """
-        if not self._nano_vault:
+        """Get the spendable Gateway balance for the current signer."""
+        if not self._nano_adapter or not self._nano_client:
             raise NanopaymentNotInitializedError()
 
-        key_alias = f"wallet-{wallet_id}"
-        return await self._nano_vault.get_balance(alias=key_alias)
+        network = self._nanopayment_network()
+        balance = await self._nano_client.check_balance(
+            address=self._nano_adapter.address,
+            network=network,
+        )
+        return GatewayBalance(
+            total=balance.total,
+            available=balance.available,
+            formatted_total=f"{balance.total / 1e6} USDC",
+            formatted_available=f"{balance.available / 1e6} USDC",
+        )
+
+    async def get_gateway_onchain_balance(
+        self,
+        wallet_id: str,
+    ) -> GatewayBalance:
+        """Get the raw on-chain Gateway contract balance for the current signer."""
+        if not self._nano_adapter or not self._nano_client:
+            raise NanopaymentNotInitializedError()
+
+        from omniclaw.protocols.nanopayments.wallet import GatewayWalletManager
+
+        private_key = self._nano_adapter.signer.raw_key
+        network = self._nanopayment_network()
+        manager = GatewayWalletManager(
+            private_key=private_key,
+            network=network,
+            rpc_url=self._config.rpc_url or "",
+            nanopayment_client=self._nano_client,
+        )
+        available = await manager.get_gateway_available_balance()
+        total = available
+        return GatewayBalance(
+            total=total,
+            available=available,
+            formatted_total=f"{total / 1e6} USDC",
+            formatted_available=f"{available / 1e6} USDC",
+        )
 
     def configure_nanopayments(
         self,
@@ -774,32 +748,17 @@ class OmniClaw:
         agent_name: str,
         blockchain: Network | str | None = None,
         apply_default_guards: bool = True,
-        nanopayment_key_alias: str | bool | None = None,
     ) -> tuple[WalletSetInfo, WalletInfo]:
         """
-        Create a wallet for an AI agent with optional nanopayment key.
-
-        This is a convenience wrapper around create_agent_wallet that also
-        optionally generates or assigns a NanoKeyVault key for the agent.
-
-        Agents receive only the `nano_key_alias` string — raw private keys
-        stay in the operator's vault and are never exposed to agents.
+        Create a wallet for an AI agent.
 
         Args:
             agent_name: Unique agent name (used as wallet set name).
             blockchain: Blockchain network (defaults to config network).
             apply_default_guards: Apply configured default guards to wallet.
-            nanopayment_key_alias: NanoKeyVault alias for the agent.
-                                   If None, no nanopayment key is created.
-                                   If True, auto-generates "agent-{name}-nano".
 
         Returns:
             Tuple of (wallet_set, wallet_info).
-
-        Raises:
-            NanopaymentNotInitializedError: If nanopayment_key_alias is set
-                but nanopayments are disabled.
-            DuplicateKeyAliasError: If the generated key alias already exists.
         """
         # Create the wallet
         wallet_set, wallet = await self.create_agent_wallet(
@@ -807,24 +766,6 @@ class OmniClaw:
             blockchain=blockchain,
             apply_default_guards=apply_default_guards,
         )
-
-        # Optionally create a nanopayment key for this agent
-        if nanopayment_key_alias is not None:
-            if not self._nano_vault:
-                raise NanopaymentNotInitializedError()
-
-            # True → auto-generate alias
-            if nanopayment_key_alias is True:
-                key_alias = f"agent-{agent_name}-nano"
-            else:
-                key_alias = nanopayment_key_alias
-
-            # Generate the key (operator funds the resulting address)
-            address = await self._nano_vault.generate_key(key_alias)
-            self._logger.info(
-                f"Generated nanopayment key for agent '{agent_name}': "
-                f"alias={key_alias}, address={address}"
-            )
 
         return wallet_set, wallet
 
@@ -924,8 +865,6 @@ class OmniClaw:
         """
         Create a wallet for an AI agent, optionally applying default SDK guards.
 
-        Also creates a nanopayment key so the agent can use gateway operations.
-
         Args:
             agent_name: Unique agent name (used as wallet set name)
             blockchain: Blockchain network (defaults to config network)
@@ -945,41 +884,6 @@ class OmniClaw:
 
         if apply_default_guards:
             await self.apply_default_guards(wallet.id)
-
-        # 10/10 RESILIENCE: Key generation can fail on slow RPCs (free Base nodes).
-        # We retry with exponential backoff to ensure the agent is ready.
-        if self._nano_vault:
-            key_alias = f"wallet-{wallet.id}"
-            max_retries = 5
-            base_delay = 3
-
-            for attempt in range(max_retries):
-                try:
-                    address = await self._nano_vault.generate_key(key_alias)
-                    self._logger.info(
-                        f"Generated nanopayment key for wallet '{wallet.id}': "
-                        f"alias={key_alias}, address={address} (Attempt {attempt + 1})"
-                    )
-                    break
-                except Exception as e:
-                    error_msg = str(e).lower()
-                    if "already exists" in error_msg:
-                        self._logger.info(
-                            f"Nanopayment key already exists for wallet '{wallet.id}': "
-                            f"alias={key_alias}. Recovery successful."
-                        )
-                        break
-
-                    if attempt == max_retries - 1:
-                        self._logger.warning(
-                            f"Final attempt failed to create nanopayment key: {e}. Wallet will start in Degraded mode."
-                        )
-                    else:
-                        delay = base_delay * (2**attempt)
-                        self._logger.warning(
-                            f"Nanopayment key generation failed (Attempt {attempt + 1}): {e}. Retrying in {delay}s..."
-                        )
-                        await asyncio.sleep(delay)
 
         return wallet_set, wallet
 
@@ -1039,16 +943,16 @@ class OmniClaw:
 
     async def get_payment_address(self, wallet_id: str) -> str:
         """
-        Get the payment address for a wallet.
+        Get the address that should receive x402/nanopayment proceeds.
 
-        This is the address that should be funded with USDC to enable payments.
-
-        Args:
-            wallet_id: The wallet ID to get the payment address for.
-
-        Returns:
-            The Ethereum address (0x...) that can receive USDC.
+        When nanopayments are enabled we must use the locally controlled EOA,
+        because Gateway deposits/withdrawals and on-chain balance queries are tied
+        to the signer address. Falling back to the Circle wallet address causes
+        seller revenue to accrue to a different address than the one the server can
+        withdraw from.
         """
+        if self._nano_adapter:
+            return self._nano_adapter.address
         wallet = await self.get_wallet(wallet_id)
         return wallet.address
 
@@ -1115,6 +1019,16 @@ class OmniClaw:
         if amount_decimal <= 0:
             raise ValidationError(f"Payment amount must be positive. Got: {amount_decimal}")
 
+        if fee_level is None:
+            fee_level = FeeLevel.MEDIUM
+        elif isinstance(fee_level, str):
+            try:
+                fee_level = FeeLevel(fee_level.upper())
+            except ValueError as exc:
+                raise ValidationError(
+                    f"Invalid fee_level {fee_level!r}. Use LOW, MEDIUM, or HIGH."
+                ) from exc
+
         if self._config.auto_reconcile_pending_settlements:
             try:
                 await self.reconcile_pending_settlements(wallet_id=wallet_id, limit=20)
@@ -1136,8 +1050,12 @@ class OmniClaw:
                         f"Invalid EVM address: {recipient!r}. "
                         f"Must be '0x' followed by exactly 40 hex characters."
                     )
-            # URL recipients (x402) must be valid HTTPS
-            elif recipient.startswith("http") and not recipient.startswith("https://"):
+            # URL recipients (x402) must be valid HTTPS (or dev HTTP on localhost/private)
+            elif (
+                recipient.startswith("http")
+                and not recipient.startswith("https://")
+                and not self._is_allowed_insecure_http(recipient)
+            ):
                 raise ValidationError(f"x402 recipient URL must use HTTPS. Got: {recipient!r}")
 
         if not idempotency_key:
@@ -1232,12 +1150,23 @@ class OmniClaw:
 
         # Detect payment route early to know which balance to check
         try:
+            # Try to get source network from Circle wallet first, then fall back to config default.
+            source_network = None
+            try:
+                wallet_info = self._wallet_service.get_wallet(wallet_id)
+                source_network = Network.from_string(wallet_info.blockchain)
+            except Exception:
+                if self._nano_adapter:
+                    source_network = self._config.network
+
+            if source_network is None:
+                # Fallback to ETH Sepolia if we can't determine the network
+                source_network = Network.ETH_SEPOLIA
+
             detected_route = (
                 self._router.detect_method(
                     recipient,
-                    source_network=Network.from_string(
-                        self._wallet_service.get_wallet(wallet_id).blockchain
-                    ),
+                    source_network=source_network,
                     destination_chain=kwargs.get("destination_chain"),
                     amount=amount_decimal,
                 )
@@ -1254,24 +1183,45 @@ class OmniClaw:
                 # Reserve budget/limits first (atomic counters)
                 reservation_tokens = await guards_chain.reserve(context)
                 guards_passed = [g.name for g in guards_chain]
-            except ValueError as e:
+            except Exception as e:
+                from omniclaw.guards.confirm import ConfirmRequiredError
+
                 await self._ledger.update_status(
                     ledger_entry.id,
                     LedgerEntryStatus.BLOCKED,
                     tx_hash=None,
                 )
-                return PaymentResult(
-                    success=False,
-                    transaction_id=None,
-                    blockchain_tx=None,
-                    amount=amount_decimal,
-                    recipient=recipient,
-                    method=PaymentMethod.TRANSFER,
-                    status=PaymentStatus.BLOCKED,
-                    error=f"Blocked by guard: {e}",
-                    guards_passed=guards_passed,
-                    metadata={"guard_reason": str(e)},
-                )
+                if isinstance(e, ConfirmRequiredError):
+                    return PaymentResult(
+                        success=False,
+                        transaction_id=None,
+                        blockchain_tx=None,
+                        amount=amount_decimal,
+                        recipient=recipient,
+                        method=PaymentMethod.TRANSFER,
+                        status=PaymentStatus.BLOCKED,
+                        error="Confirmation required",
+                        guards_passed=guards_passed,
+                        metadata={
+                            "guard_reason": str(e),
+                            "confirmation_id": e.confirmation_id,
+                            "confirmation_required": True,
+                        },
+                    )
+                if isinstance(e, ValueError):
+                    return PaymentResult(
+                        success=False,
+                        transaction_id=None,
+                        blockchain_tx=None,
+                        amount=amount_decimal,
+                        recipient=recipient,
+                        method=PaymentMethod.TRANSFER,
+                        status=PaymentStatus.BLOCKED,
+                        error=f"Blocked by guard: {e}",
+                        guards_passed=guards_passed,
+                        metadata={"guard_reason": str(e)},
+                    )
+                raise
 
         # Acquire Fund Lock (Mutex) to prevent double-spend race conditions
         lock_ttl_seconds = max(60, int(self._config.transaction_poll_timeout) + 30)
@@ -1318,18 +1268,17 @@ class OmniClaw:
             # Check if this is a Gateway-based route
             route_uses_gateway = detected_route in (PaymentMethod.X402, PaymentMethod.NANOPAYMENT)
 
-            if route_uses_gateway and self._nano_vault:
+            if route_uses_gateway and self._nano_adapter:
                 try:
-                    gateway_balance = await self._nano_vault.get_balance(
-                        alias=f"wallet-{wallet_id}"
-                    )
-                    # Gateway balance is available for spending (no reservations concept)
-                    available = gateway_balance.available
-                    balance_source = f"Gateway: {available}"
-                except Exception:
-                    # Fall back to circle balance if gateway lookup fails
-                    available = circle_balance - reserved_total
-                    balance_source = f"Circle: {available}"
+                    gateway_balance = await self.get_gateway_balance(wallet_id)
+                    available = Decimal(str(gateway_balance.available_decimal))
+                    balance_source = f"Gateway available: {available}"
+                except Exception as e:
+                    # For nanopayment routes, don't fall back to circle balance
+                    # Instead, log error and use 0 (will fail with clearer message)
+                    self._logger.warning(f"Gateway balance check failed: {e}")
+                    available = Decimal("0")
+                    balance_source = "Gateway available: (check failed)"
             else:
                 available = circle_balance - reserved_total
                 balance_source = f"Circle: {available}"
@@ -1423,6 +1372,12 @@ class OmniClaw:
                     result.blockchain_tx,
                     metadata_updates={"transaction_id": result.transaction_id},
                 )
+                if result.amount != amount_decimal:
+                    await self._storage.update(
+                        self._ledger.COLLECTION,
+                        ledger_entry.id,
+                        {"amount": str(result.amount)},
+                    )
                 if guards_chain:
                     try:
                         await guards_chain.commit(reservation_tokens)
@@ -1610,14 +1565,26 @@ class OmniClaw:
 
         route_uses_gateway = detected_route in (PaymentMethod.X402, PaymentMethod.NANOPAYMENT)
 
-        if route_uses_gateway and self._nano_vault:
+        if route_uses_gateway and self._nano_adapter:
             try:
-                gateway_balance = await self._nano_vault.get_balance(alias=f"wallet-{wallet_id}")
-                available = gateway_balance.available
+                # Direct private key mode - use ON-CHAIN query
+                from omniclaw.protocols.nanopayments.wallet import GatewayWalletManager
+
+                private_key = self._nano_adapter.signer.raw_key
+                network = self._nanopayment_network()
+                manager = GatewayWalletManager(
+                    private_key=private_key,
+                    network=network,
+                    rpc_url=self._config.rpc_url or "",
+                    nanopayment_client=self._nano_client,
+                )
+                # Use on-chain available balance
+                available = await manager.get_gateway_available_balance()
                 balance_source = f"Gateway: {available}"
-            except Exception:
-                available = circle_balance - reserved_total
-                balance_source = f"Circle: {available}"
+            except Exception as e:
+                self._logger.warning(f"Gateway balance check failed: {e}")
+                available = 0
+                balance_source = "Gateway: (check failed)"
         else:
             available = circle_balance - reserved_total
             balance_source = f"Circle: {available}"
@@ -1767,7 +1734,11 @@ class OmniClaw:
                         f"Invalid EVM address: {recipient!r}. "
                         f"Must be '0x' followed by exactly 40 hex characters."
                     )
-            elif recipient.startswith("http") and not recipient.startswith("https://"):
+            elif (
+                recipient.startswith("http")
+                and not recipient.startswith("https://")
+                and not self._is_allowed_insecure_http(recipient)
+            ):
                 raise ValidationError(f"x402 recipient URL must use HTTPS. Got: {recipient!r}")
 
         # Acquire lock to ensure balance isn't changing while we simulate and reserve

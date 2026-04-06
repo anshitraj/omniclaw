@@ -10,11 +10,12 @@ This tests the complete flow:
 6. Seller settles via facilitator
 """
 
-import pytest
-import asyncio
 from unittest.mock import Mock
-from omniclaw.seller import create_seller, CircleGatewayFacilitator
-from omniclaw.seller.facilitator import VerifyResult, SettleResult
+
+import pytest
+
+from omniclaw.seller import CircleGatewayFacilitator, create_seller
+from omniclaw.seller.facilitator import SettleResult, VerifyResult
 
 
 def create_mock_facilitator(verify_result=None, settle_result=None):
@@ -300,7 +301,7 @@ class TestFacilitatorFactory:
 
     def test_create_all_facilitators(self):
         """Test creating all supported facilitators."""
-        from omniclaw.seller import create_facilitator, SUPPORTED_FACILITATORS
+        from omniclaw.seller import SUPPORTED_FACILITATORS, create_facilitator
 
         for name in SUPPORTED_FACILITATORS:
             f = create_facilitator(provider=name, api_key="test_key")

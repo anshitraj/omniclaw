@@ -1,6 +1,6 @@
-# OmniClaw SDK Usage Guide
+# OmniClaw Financial Policy Engine Usage Guide
 
-This guide covers the common SDK workflows without repeating the full architecture or every method signature.
+This guide covers common workflows for the Financial Policy Engine without repeating the full architecture or every method signature.
 
 ## 1. Initialize the Client
 
@@ -14,7 +14,6 @@ With environment variables:
 
 ```env
 CIRCLE_API_KEY=your_circle_api_key
-ENTITY_SECRET=your_entity_secret
 OMNICLAW_NETWORK=ARC-TESTNET
 ```
 
@@ -26,18 +25,12 @@ OMNICLAW_REDIS_URL=redis://localhost:6379
 OMNICLAW_LOG_LEVEL=DEBUG
 OMNICLAW_RPC_URL=https://your-rpc-provider
 
-# Nanopayment network (default: Base Sepolia for testnet)
-OMNICLAW_NANOPAYMENTS_DEFAULT_NETWORK=eip155:84532  # Base Sepolia
+# Nanopayments network is derived from OMNICLAW_NETWORK (EVM chain)
 ```
 
-### Entity Secret Recovery
+### Entity Secret
 
-When `ENTITY_SECRET` is missing, the SDK can auto-generate and register one if `CIRCLE_API_KEY` is available.
-
-What gets stored:
-
-- active entity secret: environment or `.env`
-- Circle recovery file: user config directory
+You do not need to set `ENTITY_SECRET` manually. It is auto-generated and registered on first run when `CIRCLE_API_KEY` is available.
 
 Linux recovery-file location:
 
@@ -60,7 +53,7 @@ To test payments with real USDC on testnet:
 **1. Configure for Base Sepolia:**
 
 ```env
-OMNICLAW_NANOPAYMENTS_DEFAULT_NETWORK=eip155:84532  # Base Sepolia
+OMNICLAW_NETWORK=BASE-SEPOLIA
 OMNICLAW_RPC_URL=https://sepolia.base.org
 ```
 
@@ -78,7 +71,7 @@ wallet_set, wallet = await client.create_agent_wallet("my-agent")
 circle_address = wallet.address
 
 # Nano/Gateway (for nanopayments - EIP-3009)
-nano_address = await client._nano_vault.get_address(alias=f"wallet-{wallet.id}")
+nano_address = client.nanopayment_adapter.address
 ```
 
 **4. Test a payment:**
@@ -175,8 +168,9 @@ Key runtime arguments:
 
 OmniClaw routes automatically:
 
+- URL -> Gateway nanopayments (x402), with fallback to x402 direct if needed
+- address + amount below micro-threshold -> Gateway nanopayments
 - address -> direct transfer
-- URL -> x402
 - address + `destination_chain` -> gateway/cross-chain
 
 Examples:
@@ -357,7 +351,7 @@ routes = {
 
 ### Deposit USDC to Enable Receiving
 
-Your gateway wallet needs a USDC balance to receive payments (it acts as a vault — buyers pay you by sending from their gateway to yours).
+Your gateway wallet needs a USDC balance to receive payments (it acts as a buffer — buyers pay you by sending from their gateway to yours).
 
 ```python
 # Check your gateway balance (uses wallet_id)
@@ -418,13 +412,13 @@ async def premium(payment=Depends(client.sell("$0.50"))):
 ```python
 # Withdraw to your Circle wallet
 await client.withdraw_from_gateway(
-    nano_key_alias="my-nano-key",
+    wallet_id=wallet.id,
     amount_usdc="50.00",
 )
 
 # Or withdraw to another blockchain address
 await client.withdraw_from_gateway(
-    nano_key_alias="my-nano-key",
+    wallet_id=wallet.id,
     amount_usdc="25.00",
     destination_chain=Network.BASE,
     recipient="0xBaseRecipient",
@@ -462,6 +456,8 @@ Configuration:
 ```env
 OMNICLAW_NANOPAYMENTS_MICRO_THRESHOLD=1.00  # Amounts < $1 use nanopayments
 ```
+
+**Gateway CAIP-2:** The nanopayment CAIP-2 chain identifier is derived from `OMNICLAW_NETWORK` via `network_to_caip2`. Only EVM networks are supported.
 
 On the buyer side, OmniClaw:
 1. Checks if the recipient supports gateway nanopayments

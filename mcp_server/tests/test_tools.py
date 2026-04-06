@@ -1,7 +1,6 @@
 from unittest.mock import AsyncMock, patch
 
 import pytest
-
 from app.mcp.fastmcp_server import (
     check_balance,
     create_agent_wallet,
@@ -80,8 +79,6 @@ async def test_create_payment_intent_tool(mock_client):
     assert result["intent"]["id"] == "intent-1"
 
 
-
-
 @pytest.mark.asyncio
 async def test_detect_payment_method_tool(mock_client):
     mock_client.detect_method.return_value = {
@@ -93,5 +90,3 @@ async def test_detect_payment_method_tool(mock_client):
 
     assert result["status"] == "success"
     assert result["payment_method"] == "transfer"
-
-

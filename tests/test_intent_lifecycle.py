@@ -6,23 +6,20 @@ including fund reservation, expiry checks, and facade API.
 """
 
 import asyncio
-from datetime import datetime, timedelta
 from decimal import Decimal
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
 from omniclaw.client import OmniClaw
 from omniclaw.core.types import (
     Network,
-    PaymentIntent,
     PaymentIntentStatus,
     PaymentMethod,
     PaymentResult,
     PaymentStatus,
     SimulationResult,
 )
-from omniclaw.storage.memory import InMemoryStorage
 
 
 @pytest.fixture
@@ -218,7 +215,7 @@ async def test_reservation_prevents_double_spend(client):
 
     # Balance is 500.00
     # Create first intent for 300
-    intent1 = await client.intent.create(
+    await client.intent.create(
         wallet_id="wallet-1",
         recipient="0x742d35Cc6634C0532925a3b844Bc9e7595f5e4a0",
         amount="300.00",

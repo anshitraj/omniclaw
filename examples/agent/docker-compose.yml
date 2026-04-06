@@ -1,0 +1,27 @@
+services:
+  omniclaw-agent:
+    build:
+      context: ../..
+      dockerfile: Dockerfile.agent
+    command: uv run uvicorn omniclaw.agent.server:app --host 0.0.0.0 --port 8080
+    environment:
+      - 
+      - OMNICLAW_RPC_URL=https://ethereum-sepolia-rpc.publicnode.com
+      - OMNICLAW_NETWORK=ETH-SEPOLIA
+      - OMNICLAW_STORAGE_BACKEND=memory
+      - OMNICLAW_AGENT_TOKEN=test-agent-token
+      - OMNICLAW_AGENT_POLICY_PATH=/config/policy.json
+    volumes:
+      - ./policy.json:/config/policy.json
+    ports:
+      - "9080:8080"
+
+  seller:
+    build:
+      context: ../..
+      dockerfile: Dockerfile.agent
+    command: uv run python3 examples/agent/seller.py
+    environment:
+      - OMNICLAW_RPC_URL=https://ethereum-sepolia-rpc.publicnode.com
+    ports:
+      - "9001:8001"

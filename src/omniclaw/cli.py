@@ -7,6 +7,7 @@ warnings.filterwarnings("ignore", category=DeprecationWarning, module="pkg_resou
 warnings.filterwarnings("ignore", message=".*pkg_resources is deprecated.*")
 
 import argparse
+import json
 import os
 from collections.abc import Sequence
 
@@ -34,9 +35,10 @@ def print_banner():
 ENV_VARS = {
     "required": {
         "CIRCLE_API_KEY": "Circle API key for wallet/payment operations",
-        "ENTITY_SECRET": "Entity secret for transaction signing",
+        "OMNICLAW_PRIVATE_KEY": "Private key for nanopayment signing",
     },
     "optional": {
+        "ENTITY_SECRET": "Auto-generated entity secret (advanced/manual setup only)",
         "OMNICLAW_RPC_URL": "RPC endpoint for trust gate (ERC-8004)",
         "OMNICLAW_STORAGE_BACKEND": "Storage backend: memory or redis",
         "OMNICLAW_REDIS_URL": "Redis connection URL (when using redis)",
@@ -107,7 +109,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     setup_parser = subparsers.add_parser(
         "setup",
-        help="Quickly set up your Control Plane credentials (.env.agent)",
+        help="Quickly set up your Financial Policy Engine credentials (.env.agent)",
     )
     setup_parser.add_argument("--api-key", help="Circle API Key")
     setup_parser.add_argument(
@@ -116,11 +118,23 @@ def build_parser() -> argparse.ArgumentParser:
 
     server_parser = subparsers.add_parser(
         "server",
-        help="Start the OmniClaw Control Plane (Financial Firewall) server",
+        help="Start the OmniClaw Financial Policy Engine server",
     )
     server_parser.add_argument("--host", default="0.0.0.0", help="Host to bind to")
     server_parser.add_argument("--port", type=int, default=8080, help="Port to listen on")
     server_parser.add_argument("--reload", action="store_true", help="Enable auto-reload")
+
+    policy_parser = subparsers.add_parser(
+        "policy",
+        help="Policy utilities (lint/validate)",
+    )
+    policy_sub = policy_parser.add_subparsers(dest="policy_command")
+    lint_parser = policy_sub.add_parser("lint", help="Validate policy.json")
+    lint_parser.add_argument(
+        "--path",
+        default=os.environ.get("OMNICLAW_AGENT_POLICY_PATH", "/config/policy.json"),
+        help="Path to policy.json",
+    )
 
     return parser
 
@@ -155,7 +169,10 @@ def handle_setup(args: argparse.Namespace) -> int:
     create_env_file(api_key, entity_secret, env_path=env_path, network=args.network, overwrite=True)
     print(f"✨ Successfully configured {env_path}!")
     print("To start the server locally, run: omniclaw server")
-    print("To start via Docker, run: docker compose -f docker-compose.agent.yml up -d")
+    print(
+        "To start via Docker, run: "
+        "docker compose -f examples/local-economy/docker-compose.payment-agent.yml up -d"
+    )
     return 0
 
 
@@ -191,7 +208,7 @@ def handle_server(args: argparse.Namespace) -> int:
             print("❌ Error: Failed to resolve or generate Entity Secret.")
             return 1
 
-    print(f"🚀 Starting OmniClaw Control Plane on {args.host}:{args.port}...")
+    print(f"🚀 Starting OmniClaw Financial Policy Engine on {args.host}:{args.port}...")
     uvicorn.run(
         "omniclaw.agent.server:app",
         host=args.host,
@@ -200,6 +217,22 @@ def handle_server(args: argparse.Namespace) -> int:
         log_level=os.getenv("OMNICLAW_LOG_LEVEL", "info").lower(),
     )
     return 0
+
+
+def handle_policy_lint(args: argparse.Namespace) -> int:
+    """Validate policy.json against strict schema."""
+    from omniclaw.agent.policy_schema import validate_policy
+
+    path = args.path
+    try:
+        with open(path) as f:
+            data = json.load(f)
+        validate_policy(data)
+        print(f"✅ policy.json is valid: {path}")
+        return 0
+    except Exception as e:
+        print(f"❌ Invalid policy.json: {e}")
+        return 1
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -225,6 +258,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.command == "server":
         return handle_server(args)
+
+    if args.command == "policy" and args.policy_command == "lint":
+        return handle_policy_lint(args)
 
     parser.print_help()
     print("\nCommands:")

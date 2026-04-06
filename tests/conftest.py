@@ -45,7 +45,5 @@ def mock_circle_client(monkeypatch):
     # Patch the class in omniclaw.core.circle_client
     # We patch it where it is imported/used, which is effectively the class definition
     with monkeypatch.context() as m:
-        m.setattr(
-            "omniclaw.core.circle_client.CircleClient", MagicMock(return_value=mock_client)
-        )
+        m.setattr("omniclaw.core.circle_client.CircleClient", MagicMock(return_value=mock_client))
         yield mock_client

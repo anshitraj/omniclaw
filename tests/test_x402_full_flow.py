@@ -11,15 +11,13 @@ Run with:
     pytest tests/test_x402_full_flow.py -v
 """
 
-import asyncio
 import base64
+import binascii
 import json
-import pytest
-from decimal import Decimal
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import httpx
-
+import pytest
 
 # =============================================================================
 # Test Scenarios
@@ -183,7 +181,7 @@ class TestX402SmartRouting:
 
         supports_circle = any(acc.get("scheme") == "GatewayWalletBatched" for acc in accepts)
 
-        assert supports_circle == False, "Should NOT detect Circle support"
+        assert not supports_circle, "Should NOT detect Circle support"
         print("✓ Correctly detected: NO Circle nanopayment support")
 
     @pytest.mark.asyncio
@@ -205,7 +203,7 @@ class TestX402SmartRouting:
 
         supports_circle = any(acc.get("scheme") == "GatewayWalletBatched" for acc in accepts)
 
-        assert supports_circle == True, "Should detect Circle support"
+        assert supports_circle, "Should detect Circle support"
         print("✓ Correctly detected: Circle nanopayment IS supported")
 
     @pytest.mark.asyncio
@@ -290,7 +288,7 @@ class TestClientSmartRouting:
         # This is what the client should do
         supports_nanopayment = any(acc.get("scheme") == "GatewayWalletBatched" for acc in accepts)
 
-        assert supports_nanopayment == True
+        assert supports_nanopayment
         print("✓ Client correctly routes based on 402 response")
         print(f"  Accepts: {[a['scheme'] for a in accepts]}")
 
@@ -362,7 +360,7 @@ class TestEndToEndFlows:
 
         # Step 4: Seller returns 402 (no Circle)
         mock_402 = create_402_response(schemes=["exact"])
-        print(f"4. Seller returns: 402 (accepts: exact only)")
+        print("4. Seller returns: 402 (accepts: exact only)")
 
         # Step 5: Client routes to basic x402
         accepts = mock_402.headers["payment-required"]
@@ -438,7 +436,7 @@ class TestErrorScenarios:
         print("Error: Invalid 402 Body")
 
         # Invalid base64
-        with pytest.raises(Exception):
+        with pytest.raises(binascii.Error):
             base64.b64decode("not-valid-base64!!!")
         print("✓ Correctly detected invalid base64")
 

@@ -1,12 +1,7 @@
-from __future__ import annotations
-
-import warnings
-
-# Suppress deprecation warnings from downstream dependencies (e.g. web3 using pkg_resources)
-warnings.filterwarnings("ignore", category=DeprecationWarning, module="pkg_resources")
-warnings.filterwarnings("ignore", message=".*pkg_resources is deprecated.*")
-
 import asyncio
+import contextlib
+import os
+import warnings
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -16,6 +11,10 @@ from omniclaw.agent.auth import TokenAuth
 from omniclaw.agent.policy import PolicyManager, WalletManager
 from omniclaw.agent.routes import router
 from omniclaw.core.logging import configure_logging, get_logger
+
+# Suppress deprecation warnings from downstream dependencies (e.g. web3 using pkg_resources)
+warnings.filterwarnings("ignore", category=DeprecationWarning, module="pkg_resources")
+warnings.filterwarnings("ignore", message=".*pkg_resources is deprecated.*")
 
 logger = get_logger(__name__)
 
@@ -37,26 +36,48 @@ def create_app() -> FastAPI:
         circle_api_key = (
             app.state.config.get("circle_api_key") if hasattr(app.state, "config") else None
         )
-        entity_secret = (
-            app.state.config.get("entity_secret") if hasattr(app.state, "config") else None
-        )
 
         from omniclaw import OmniClaw
         from omniclaw.core.types import Network
 
+        # Read network from environment
+        network_str = os.getenv("OMNICLAW_NETWORK", "ETH-SEPOLIA")
+        try:
+            network = Network.from_string(network_str)
+        except Exception:
+            network = Network.ETH_SEPOLIA
+        logger.info(f"Using network: {network}")
+
         client = OmniClaw(
             circle_api_key=circle_api_key,
-            entity_secret=entity_secret,
-            network=Network.ARC_TESTNET,
+            entity_secret=None,  # Using direct private key now
+            network=network,
         )
 
         # Initialize wallet manager
         wallet_mgr = WalletManager(policy_mgr, client)
 
-        # PRODUCITON RESILIENCE: Run wallet initialization in the background
-        # This prevents Circle API timeouts from blocking the Control Plane startup
-        logger.info("OmniClaw background initialization started (non-blocking)...")
-        asyncio.create_task(wallet_mgr.initialize_wallets())
+        # Initialize wallet mappings - MUST complete before serving requests
+        # In direct private key mode, this is fast (no Circle API calls)
+        logger.info("OmniClaw wallet initialization starting...")
+        await wallet_mgr.initialize_wallets()
+        logger.info("OmniClaw wallet initialization complete")
+
+        # Policy hot-reload loop
+        reload_interval = float(os.getenv("OMNICLAW_POLICY_RELOAD_INTERVAL", "5"))
+        policy_reload_task = None
+
+        async def _policy_watch_loop() -> None:
+            while True:
+                await asyncio.sleep(reload_interval)
+                reloaded = await policy_mgr.reload()
+                if reloaded:
+                    logger.info("Policy changed on disk. Reinitializing wallets and guards...")
+                    await wallet_mgr.initialize_wallets()
+                    logger.info("Policy reload complete.")
+
+        if reload_interval > 0:
+            policy_reload_task = asyncio.create_task(_policy_watch_loop())
 
         # Initialize token auth
         auth = TokenAuth(policy_mgr)
@@ -71,13 +92,17 @@ def create_app() -> FastAPI:
         yield
 
         logger.info("Shutting down OmniClaw Agent Server...")
+        if policy_reload_task:
+            policy_reload_task.cancel()
+            with contextlib.suppress(Exception):
+                await policy_reload_task
         if hasattr(app.state, "client"):
             await app.state.client.__aexit__(None, None, None)
         logger.info("OmniClaw Agent Server stopped")
 
     app = FastAPI(
         title="OmniClaw Agent API",
-        description="API for OmniClaw Agent Wallet Control Plane",
+        description="API for the OmniClaw Financial Policy Engine",
         version="2.0.0",
         lifespan=lifespan,
     )
@@ -92,12 +117,17 @@ def create_app() -> FastAPI:
 
     app.include_router(router)
 
-    import os
+    from omniclaw.core.types import network_to_caip2
+
+    omniclaw_network = os.environ.get("OMNICLAW_NETWORK", "ARC-TESTNET")
+    nanopay_network = network_to_caip2(omniclaw_network)
 
     app.state.config = {
         "policy_path": os.environ.get("OMNICLAW_AGENT_POLICY_PATH", "/config/policy.json"),
         "circle_api_key": os.environ.get("CIRCLE_API_KEY"),
-        "entity_secret": os.environ.get("ENTITY_SECRET"),
+        "private_key": os.environ.get("OMNICLAW_PRIVATE_KEY"),
+        "rpc_url": os.environ.get("OMNICLAW_RPC_URL"),
+        "nanopay_network": nanopay_network,
     }
 
     return app

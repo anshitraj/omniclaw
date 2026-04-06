@@ -391,7 +391,7 @@ class KeyManagementError(NanopaymentError):
 
 
 class KeyNotFoundError(KeyManagementError):
-    """Raised when a requested key alias does not exist in the vault."""
+    """Raised when a requested key alias does not exist."""
 
     def __init__(self, alias: str) -> None:
         super().__init__(

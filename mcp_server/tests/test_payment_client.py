@@ -2,7 +2,6 @@ from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
 from app.payments.omniclaw_client import OmniclawPaymentClient
 
 
@@ -60,7 +59,7 @@ async def test_execute_payment(payment_client, mock_sdk_client):
         "guards_passed": [],
         "error": None,
         "metadata": {},
-        "resource_data": None
+        "resource_data": None,
     }
     mock_sdk_client.pay = AsyncMock(return_value=payment_result)
 

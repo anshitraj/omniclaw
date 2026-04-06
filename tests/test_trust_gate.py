@@ -12,9 +12,8 @@ Tests cover:
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
 import httpx
+import pytest
 
 from omniclaw.identity.types import (
     AgentIdentity,
@@ -28,7 +27,6 @@ from omniclaw.identity.types import (
 from omniclaw.trust.cache import TrustCache
 from omniclaw.trust.policy import PolicyEngine
 from omniclaw.trust.scoring import ReputationAggregator
-
 
 # ─────────────────────────────────────────────────────────────────
 # Trust Policy Tests
@@ -793,8 +791,9 @@ class TestProviderOptimizations:
 
     def test_get_reputation_summary_empty_clients_warning(self):
         """getSummary with empty clients → None (EIP-8004 security requirement)."""
-        from omniclaw.trust.provider import ERC8004Provider
         import asyncio
+
+        from omniclaw.trust.provider import ERC8004Provider
 
         provider = ERC8004Provider(rpc_url="https://fake.rpc")
         loop = asyncio.new_event_loop()
@@ -880,6 +879,7 @@ class TestDatetimeFix:
     def test_trust_gate_uses_timezone_aware_datetime(self):
         """gate.py should use datetime.now(timezone.utc)."""
         import inspect
+
         from omniclaw.trust import gate
 
         source = inspect.getsource(gate)
@@ -889,6 +889,7 @@ class TestDatetimeFix:
     def test_scoring_uses_timezone_aware_datetime(self):
         """scoring.py should use datetime.now(timezone.utc)."""
         import inspect
+
         from omniclaw.trust import scoring
 
         source = inspect.getsource(scoring)

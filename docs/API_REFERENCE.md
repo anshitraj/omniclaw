@@ -1,6 +1,6 @@
 # OmniClaw API Reference
 
-This is the public SDK reference for the current Python package. It focuses on the API surface users are expected to call directly.
+This is the public API reference for the Financial Policy Engine. It focuses on the API surface users are expected to call directly.
 
 ## Top-Level Imports
 
@@ -24,8 +24,14 @@ Required:
 
 ```env
 CIRCLE_API_KEY=...
+OMNICLAW_NETWORK=ETH-SEPOLIA  # or ARC-TESTNET
+# Direct-key mode (recommended for agents / nanopayments)
+OMNICLAW_PRIVATE_KEY=0x...
+```
+
+If you are using Circle developer-controlled wallets directly, provide:
+```
 ENTITY_SECRET=...
-OMNICLAW_NETWORK=ARC-TESTNET
 ```
 
 Optional:
@@ -52,19 +58,19 @@ Defined in [onboarding.py](../src/omniclaw/onboarding.py).
 
 ### `quick_setup(api_key, env_path=".env", network="ARC-TESTNET")`
 
-One-time onboarding helper that generates and registers an entity secret and writes an env file.
+One-time onboarding helper that generates and registers an entity secret and writes an env file (optional).
 
-### `generate_entity_secret()`
+### `generate_entity_secret()` (optional)
 
-Returns a 64-character hex entity secret.
+Returns a 64-character hex entity secret (manual setup only).
 
-### `register_entity_secret(api_key, entity_secret, recovery_dir=None)`
+### `register_entity_secret(api_key, entity_secret, recovery_dir=None)` (optional)
 
-Registers an entity secret with Circle and downloads the recovery file.
+Registers an entity secret with Circle and downloads the recovery file (manual setup only).
 
-### `create_env_file(api_key, entity_secret, env_path=".env", network="ARC-TESTNET", overwrite=False)`
+### `create_env_file(api_key, entity_secret, env_path=".env", network="ARC-TESTNET", overwrite=False)` (optional)
 
-Writes the basic OmniClaw env file.
+Writes the basic OmniClaw env file (manual setup only).
 
 ### `verify_setup()`
 
@@ -111,7 +117,6 @@ OmniClaw(
 - `intents`
 - `ledger`
 - `webhooks`
-- `vault` — NanoKeyVault for managing nanopayment EOA keys
 - `nanopayment_adapter` — NanopaymentAdapter for buyer-side nanopayments
 
 ### Wallet Methods
@@ -259,39 +264,22 @@ await client.pay(
 # Routes to Circle Gateway nanopayment if amount < nanopayments_micro_threshold
 ```
 
-#### Key Management (NanoKeyVault)
-
-```python
-# Generate a new EOA key for nanopayments
-await client.add_key(alias="agent-nano", private_key="0x...")
-
-# Get the EOA address for a key
-await client.get_key_address(alias="agent-nano")  # -> "0x..."
-
-# Sign data with a key
-await client.sign(alias="agent-nano", data=b"...")  # -> hex signature
-
-# Delete a key
-await client.delete_key(alias="agent-nano")
-```
-
 #### Gateway Wallet Management
 
 ```python
-# Get gateway balance for a nanopayment key
-await client.get_gateway_balance(nano_key_alias="agent-nano")
+# Get gateway balance
+await client.get_gateway_balance(wallet_id="wallet-id")
 # -> GatewayBalance(total, available, formatted_total, formatted_available)
 
 # Deposit USDC to gateway wallet (enables receiving nanopayments)
 await client.deposit_to_gateway(
-    nano_key_alias="agent-nano",
+    wallet_id="wallet-id",
     amount_usdc="10.00",
-    source_wallet_id="wallet-id",
 )
 
 # Withdraw USDC from gateway wallet
 await client.withdraw_from_gateway(
-    nano_key_alias="agent-nano",
+    wallet_id="wallet-id",
     amount_usdc="5.00",
     destination_chain=None,  # Optional: withdraw to another chain
     recipient="0xDestination",  # Optional: specific recipient
@@ -306,17 +294,13 @@ client.configure_nanopayments(
 )
 ```
 
-#### Agent Creation with Nanopayments
+#### Agent Creation
 
 ```python
-# Create an agent wallet with nanopayment support
+# Create an agent wallet
 agent_wallet = await client.create_agent(
-    name="data-agent",
-    nano_key_alias="data-agent-nano",  # Optional: specific key alias
+    agent_name="data-agent",
 )
-# agent_wallet.wallet_id - Circle wallet for deposits
-# agent_wallet.nano_key_alias - Vault key for gateway
-# agent_wallet.nano_address - EOA address for receiving nanopayments
 ```
 
 ### Nanopayments Environment Variables
@@ -325,11 +309,10 @@ agent_wallet = await client.create_agent(
 OMNICLAW_NANOPAYMENTS_ENABLED=true
 OMNICLAW_NANOPAYMENTS_ENVIRONMENT=testnet  # or "mainnet"
 OMNICLAW_NANOPAYMENTS_MICRO_THRESHOLD=1.00
-OMNICLAW_NANOPAYMENTS_DEFAULT_KEY_ALIAS=my-nano-key
 OMNICLAW_NANOPAYMENTS_AUTO_TOPUP=true
 OMNICLAW_NANOPAYMENTS_TOPUP_THRESHOLD=1.00
 OMNICLAW_NANOPAYMENTS_TOPUP_AMOUNT=10.00
-OMNICLAW_NANOPAYMENTS_DEFAULT_NETWORK=eip155:5042002
+# Nanopayments network is derived from OMNICLAW_NETWORK (EVM chain)
 ```
 
 ## `WalletService`

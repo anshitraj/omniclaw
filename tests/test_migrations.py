@@ -33,4 +33,3 @@ def test_backfill_ledger_entries_counts_changes():
     assert normalized[0]["metadata"]["settlement_final"] is True
     assert normalized[1]["metadata"]["settlement_final"] is False
     assert "settlement_final" not in normalized[2]["metadata"]
-

@@ -96,9 +96,10 @@ class TestClientInitialization:
                 "OMNICLAW_ENV": "production",
             },
             clear=True,
+        ), pytest.raises(
+            ConfigurationError, match="Missing required production environment variables"
         ):
-            with pytest.raises(ConfigurationError, match="Missing required production environment variables"):
-                OmniClaw(network=Network.ARC_TESTNET)
+            OmniClaw(network=Network.ARC_TESTNET)
 
     def test_init_production_requires_strict_settlement(self):
         with patch.dict(
@@ -113,9 +114,8 @@ class TestClientInitialization:
                 "OMNICLAW_STRICT_SETTLEMENT": "false",
             },
             clear=True,
-        ):
-            with pytest.raises(ConfigurationError, match="OMNICLAW_STRICT_SETTLEMENT must be true"):
-                OmniClaw(network=Network.ARC_TESTNET)
+        ), pytest.raises(ConfigurationError, match="OMNICLAW_STRICT_SETTLEMENT must be true"):
+            OmniClaw(network=Network.ARC_TESTNET)
 
 
 class TestGuardManager:
@@ -277,7 +277,7 @@ class TestSimulate:
     @pytest.mark.asyncio
     async def test_simulate_blocked_by_guard(self, client):
         client._wallet_service.get_usdc_balance_amount = lambda wid: Decimal("100.00")
-        
+
         # Add guard for this wallet
         await client.guards.add_guard(
             "wallet-123",

@@ -17,6 +17,9 @@ class AuthenticatedAgent:
 
     token: str
     wallet_id: str
+    signer: object | None = None
+    config: object | None = None
+    network: str | None = None
 
 
 class TokenAuth:

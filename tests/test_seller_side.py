@@ -15,12 +15,12 @@ Run with:
 
 import base64
 import json
-import pytest
 from decimal import Decimal
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
-from omniclaw.seller import Seller, create_seller, PaymentScheme
+import pytest
 
+from omniclaw.seller import PaymentScheme, Seller, create_seller
 
 # =============================================================================
 # TEST PRICE PARSING (Decimal precision — critical fix)
@@ -214,14 +214,13 @@ class TestGatewayContractConfig:
         schemes = [a["scheme"] for a in accepts]
         # Without gateway contract, only "exact" should be present
         assert "exact" in schemes
-        assert not any((a.get("extra", {}) or {}).get("name") == "GatewayWalletBatched" for a in accepts)
+        assert not any(
+            (a.get("extra", {}) or {}).get("name") == "GatewayWalletBatched" for a in accepts
+        )
 
     def test_gateway_batched_included_with_contract(self, monkeypatch):
         """GatewayWalletBatched should be included when gateway contract is set."""
-        monkeypatch.setenv(
-            "CIRCLE_GATEWAY_CONTRACT",
-            "0xABCD1234ABCD1234ABCD1234ABCD1234ABCD1234"
-        )
+        monkeypatch.setenv("CIRCLE_GATEWAY_CONTRACT", "0xABCD1234ABCD1234ABCD1234ABCD1234ABCD1234")
         seller = Seller(
             seller_address="0x742d35Cc6634C0532925a3b844Bc9e7595f1E123",
             name="Test",
@@ -231,8 +230,12 @@ class TestGatewayContractConfig:
         schemes = [a["scheme"] for a in accepts]
         assert "exact" in schemes
         # Verify the correct contract is used
-        gw_accept = [a for a in accepts if (a.get("extra", {}) or {}).get("name") == "GatewayWalletBatched"][0]
-        assert gw_accept["extra"]["verifyingContract"] == "0xABCD1234ABCD1234ABCD1234ABCD1234ABCD1234"
+        gw_accept = [
+            a for a in accepts if (a.get("extra", {}) or {}).get("name") == "GatewayWalletBatched"
+        ][0]
+        assert (
+            gw_accept["extra"]["verifyingContract"] == "0xABCD1234ABCD1234ABCD1234ABCD1234ABCD1234"
+        )
         assert gw_accept["extra"]["version"] == "1"
 
 
@@ -356,9 +359,7 @@ class TestPaymentVerification:
             },
         }
 
-        is_valid, error, record = seller.verify_payment(
-            payload, accepted, verify_signature=False
-        )
+        is_valid, error, record = seller.verify_payment(payload, accepted, verify_signature=False)
         assert is_valid is False
         assert "expired" in error.lower()
 
@@ -388,9 +389,7 @@ class TestPaymentVerification:
             },
         }
 
-        is_valid, error, record = seller.verify_payment(
-            payload, accepted, verify_signature=False
-        )
+        is_valid, error, record = seller.verify_payment(payload, accepted, verify_signature=False)
         assert is_valid is False
         assert "recipient" in error.lower()
 
@@ -420,9 +419,7 @@ class TestPaymentVerification:
             },
         }
 
-        is_valid, error, record = seller.verify_payment(
-            payload, accepted, verify_signature=False
-        )
+        is_valid, error, record = seller.verify_payment(payload, accepted, verify_signature=False)
         assert is_valid is False
         assert "insufficient" in error.lower()
 
@@ -452,9 +449,7 @@ class TestPaymentVerification:
             },
         }
 
-        is_valid, error, record = seller.verify_payment(
-            payload, accepted, verify_signature=False
-        )
+        is_valid, error, record = seller.verify_payment(payload, accepted, verify_signature=False)
         assert is_valid is True
         assert record is not None
         assert record.amount == 1000

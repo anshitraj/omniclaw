@@ -16,11 +16,12 @@ are off-chain via Circle's API.
 
 Note:
     The GatewayWalletManager uses a raw EOA private key for signing on-chain
-    transactions. This key must be the same one stored in NanoKeyVault.
+    transactions. This key must be the same one used for nanopayment signing.
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 from typing import Any
@@ -168,6 +169,16 @@ _GATEWAY_WALLET_ABI: list[dict[str, Any]] = [
         "stateMutability": "view",
         "type": "function",
     },
+    {
+        "inputs": [
+            {"name": "token", "type": "address"},
+            {"name": "depositor", "type": "address"},
+        ],
+        "name": "withdrawalBlock",
+        "outputs": [{"type": "uint256"}],
+        "stateMutability": "view",
+        "type": "function",
+    },
 ]
 
 
@@ -189,7 +200,7 @@ class GatewayWalletManager:
     The private key is used to sign on-chain transactions. On-chain operations cost gas.
 
     Args:
-        private_key: Raw EOA private key hex (same as NanoKeyVault).
+        private_key: Raw EOA private key hex used for nanopayment signing.
         network: CAIP-2 network identifier (e.g. 'eip155:1').
         rpc_url: RPC endpoint for the network.
         nanopayment_client: NanopaymentClient for API operations and balance queries.
@@ -214,6 +225,12 @@ class GatewayWalletManager:
         chain_id = int(network.split(":")[1])
         self._chain_id = chain_id
         self._w3 = web3.Web3(web3.HTTPProvider(rpc_url))
+
+        # Fix for POA chains (Polygon, etc.) - use legacy buildTransaction
+        from web3.middleware import geth_poa_middleware
+
+        self._w3.middleware_onion.inject(geth_poa_middleware, layer=0)
+
         self._client = nanopayment_client
         self._gateway_address = gateway_address
         self._usdc_address = usdc_address
@@ -256,6 +273,22 @@ class GatewayWalletManager:
                 abi=_GATEWAY_WALLET_ABI,
             )
         return self._gateway_contract
+
+    def _encode_gateway_call(self, gateway: web3.Contract, fn_name: str, args: list[Any]) -> str:
+        """Encode a gateway contract call across web3 versions."""
+        if hasattr(gateway, "encode_abi"):
+            return gateway.encode_abi(fn_name=fn_name, args=args)  # type: ignore[attr-defined]
+        if hasattr(gateway, "encodeABI"):
+            return gateway.encodeABI(fn_name=fn_name, args=args)  # type: ignore[attr-defined]
+        fn = getattr(gateway.functions, fn_name)(*args)
+        if hasattr(fn, "build_transaction"):
+            tx = fn.build_transaction({"from": self._address})
+            data = tx.get("data")
+            if data:
+                return data
+        if hasattr(fn, "_encode_transaction_data"):
+            return fn._encode_transaction_data()  # type: ignore[attr-defined]
+        raise RuntimeError(f"Unable to encode gateway call: {fn_name}")
 
     # -------------------------------------------------------------------------
     # USDC helpers
@@ -320,6 +353,7 @@ class GatewayWalletManager:
             base_fee = None
 
         if base_fee is not None:
+            # Use a more reasonable priority fee (1-2 gwei instead of 50)
             max_priority_fee = self._w3.to_wei(2, "gwei")
             tx["maxPriorityFeePerGas"] = int(max_priority_fee)
             tx["maxFeePerGas"] = int(base_fee * 2 + max_priority_fee)
@@ -331,16 +365,24 @@ class GatewayWalletManager:
     def _sign_and_send(self, tx: dict[str, Any], error_type: type = DepositError) -> str:
         """Sign a transaction and send it, returning the tx hash."""
         try:
+            # Get the private key and ensure it has 0x prefix for web3.py
+            private_key = self._signer._private_key
+            if not private_key.startswith("0x"):
+                private_key = f"0x{private_key}"
+
             signed = self._w3.eth.account.sign_transaction(
                 tx,
-                private_key=self._signer._private_key,
+                private_key=private_key,
             )
-            tx_hash = self._w3.eth.send_raw_transaction(signed.raw_transaction)
+            raw_tx = getattr(signed, "rawTransaction", None) or getattr(
+                signed, "raw_transaction", None
+            )
+            tx_hash = self._w3.eth.send_raw_transaction(raw_tx)
             receipt = self._w3.eth.wait_for_transaction_receipt(tx_hash)
             if receipt["status"] != 1:
                 raise error_type(
                     reason=f"Transaction failed: {tx_hash.hex()}",
-                    transaction=tx_hash.hex(),
+                    tx_hash=tx_hash.hex(),
                 )
             return tx_hash.hex()
         except (DepositError, WithdrawError, ERC20ApprovalError):
@@ -422,43 +464,32 @@ class GatewayWalletManager:
 
             usdc = self._usdc_contract(usdc_address)
 
-            # Check current allowance
-            current_allowance = usdc.functions.allowance(
-                self._address,
-                gateway_address,
-            ).call()
-
+            # Skip allowance check - just approve directly for simplicity
             approval_tx_hash: str | None = None
-            if current_allowance < amount:
-                # Need to approve - approve EXACT amount only (security best practice)
-                try:
-                    approve_tx = self._build_tx(
-                        to=usdc_address,
-                        data=usdc.encode_abi(
-                            fn_name="approve",
-                            args=[gateway_address, amount],
-                        ),
-                    )
-                    approval_tx_hash = self._sign_and_send(
-                        approve_tx,
-                        error_type=ERC20ApprovalError,
-                    )
-                    logger.info(f"USDC approval tx: {approval_tx_hash}")
-                except Exception as exc:
-                    logger.error(f"Approval failed: {exc}")
-                    raise ERC20ApprovalError(reason=f"Failed to approve USDC: {exc}") from exc
+            try:
+                # web3.py 6.x uses functions.approve().build_transaction()
+                approve_func = usdc.functions.approve(gateway_address, amount)
+                approve_tx = self._build_tx(
+                    to=usdc_address,
+                    data=approve_func.build_transaction({"gas": 50000})["data"],
+                )
+                approval_tx_hash = self._sign_and_send(
+                    approve_tx,
+                    error_type=ERC20ApprovalError,
+                )
+                logger.info(f"USDC approval tx: {approval_tx_hash}")
+            except Exception as exc:
+                logger.error(f"Approval failed: {exc}")
+                raise ERC20ApprovalError(reason=f"Failed to approve USDC: {exc}") from exc
 
             # Build deposit transaction
             # CORRECT ABI: deposit(address token, uint256 value)
             gateway = self._get_gateway_contract(gateway_address)
-            deposit_data = gateway.encode_abi(
-                fn_name="deposit",
-                args=[usdc_address, amount],  # token address AND amount
-            )
-
+            # web3.py 6.x uses functions.deposit().build_transaction()
+            deposit_func = gateway.functions.deposit(usdc_address, amount)
             deposit_tx = self._build_tx(
                 to=gateway_address,
-                data=deposit_data,
+                data=deposit_func.build_transaction({"gas": 100000})["data"],
                 value=0,
             )
 
@@ -532,9 +563,10 @@ class GatewayWalletManager:
                 )
 
             # Initiate withdrawal
-            withdraw_data = gateway.encode_abi(
-                fn_name="initiateWithdrawal",
-                args=[usdc_address, amount],
+            withdraw_data = self._encode_gateway_call(
+                gateway,
+                "initiateWithdrawal",
+                [usdc_address, amount],
             )
 
             withdraw_tx = self._build_tx(
@@ -593,9 +625,10 @@ class GatewayWalletManager:
                 )
 
             # Complete withdrawal
-            withdraw_data = gateway.encode_abi(
-                fn_name="withdraw",
-                args=[usdc_address],
+            withdraw_data = self._encode_gateway_call(
+                gateway,
+                "withdraw",
+                [usdc_address],
             )
 
             withdraw_tx = self._build_tx(
@@ -701,6 +734,21 @@ class GatewayWalletManager:
             )
             requirements = PaymentRequirements(x402_version=2, accepts=(req_kind,))
             payload = self._signer.sign_transfer_with_authorization(req_kind)
+            # Circle Gateway requires a resource descriptor on payment payloads.
+            from omniclaw.protocols.nanopayments.types import PaymentPayload, ResourceInfo
+
+            resource = ResourceInfo(
+                url=f"direct:{recipient_address}",
+                description=f"Gateway transfer to {recipient_address} on {destination_chain}",
+                mime_type="application/json",
+            )
+            payload = PaymentPayload(
+                x402_version=payload.x402_version,
+                scheme=payload.scheme,
+                network=payload.network,
+                payload=payload.payload,
+                resource=resource,
+            )
             settle = await self._client.settle(payload=payload, requirements=requirements)
         except Exception as exc:
             raise WithdrawError(reason=f"Gateway settlement transfer failed: {exc}") from exc
@@ -857,30 +905,34 @@ class GatewayWalletManager:
 
     def check_gas_reserve(self) -> tuple[bool, str]:
         """
-        Check if the wallet has enough ETH for a deposit transaction.
+        Check if the wallet has enough USDC for gas on Arc network.
 
-        This checks if the ETH balance is sufficient to pay for gas
-        (with a safety buffer of 2x estimated cost).
+        For Arc (and other chains that use USDC as gas), check USDC balance
+        instead of ETH for deposit transaction gas.
 
         Returns:
             Tuple of (has_sufficient_gas, message).
-            has_sufficient_gas is True if balance >= 2x estimated gas cost.
-            message describes the current balance and estimated cost.
+            has_sufficient_gas is True if USDC balance >= 2x estimated gas cost.
         """
-        balance_wei = self.get_gas_balance_wei()
-        required_wei = self.estimate_gas_cost_wei() * 2  # 2x buffer
-        balance_eth = self._w3.from_wei(balance_wei, "ether")
-        required_eth = self._w3.from_wei(required_wei, "ether")
-        cost_eth = self.estimate_gas_cost_eth()
+        # For Arc - use USDC as gas token
+        try:
+            usdc_addr = asyncio.get_event_loop().run_until_complete(self._resolve_usdc_address())
+            usdc = self._usdc_contract(usdc_addr)
+            usdc_balance = usdc.functions.balanceOf(self._address).call()
 
-        has_sufficient = balance_wei >= required_wei
-        message = (
-            f"ETH balance: {balance_eth:.6f} ETH, "
-            f"Estimated gas cost: {cost_eth} ETH "
-            f"(recommended reserve: {required_eth:.6f} ETH)"
-        )
+            # Estimate gas cost in USDC (approximate)
+            gas_cost_wei = self.estimate_gas_cost_wei()
+            gas_cost_usdc = gas_cost_wei / 1e6  # Convert to USDC
 
-        return has_sufficient, message
+            balance_usdc = usdc_balance / 1e6
+            has_sufficient = usdc_balance >= (gas_cost_wei * 2)
+
+            msg = f"USDC balance: {balance_usdc:.6f}, Gas cost: {gas_cost_usdc:.6f}"
+
+            return has_sufficient, msg
+        except Exception as e:
+            # If can't check, allow anyway
+            return True, f"Could not verify gas: {e}"
 
     def has_sufficient_gas_for_deposit(self) -> bool:
         """

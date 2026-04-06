@@ -6,7 +6,6 @@ failure counting, recovery timeout, and context manager behavior.
 """
 
 import asyncio
-import time
 
 import pytest
 

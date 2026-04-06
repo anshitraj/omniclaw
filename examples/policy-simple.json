@@ -1,0 +1,22 @@
+{
+  "version": "2.0",
+  "tokens": {
+    "my-agent": {
+      "wallet_alias": "primary",
+      "active": true,
+      "label": "My Agent"
+    }
+  },
+  "wallets": {
+    "primary": {
+      "name": "Primary Wallet",
+      "limits": {
+        "daily_max": "100.00",
+        "per_tx_max": "50.00"
+      },
+      "recipients": {
+        "mode": "allow_all"
+      }
+    }
+  }
+}

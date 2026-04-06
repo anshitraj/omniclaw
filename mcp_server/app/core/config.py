@@ -1,4 +1,4 @@
-from typing import List, Literal
+from typing import Literal
 
 from pydantic import AliasChoices, AnyHttpUrl, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -39,7 +39,7 @@ class Settings(BaseSettings):
             "OMNIAGENTPAY_RATE_LIMIT_PER_MIN",
         ),
     )
-    OMNICLAW_WHITELISTED_RECIPIENTS: List[str] = Field(
+    OMNICLAW_WHITELISTED_RECIPIENTS: list[str] = Field(
         default_factory=list,
         validation_alias=AliasChoices(
             "OMNICLAW_WHITELISTED_RECIPIENTS",
@@ -62,7 +62,7 @@ class Settings(BaseSettings):
     OMNICLAW_WEBHOOK_VERIFICATION_KEY: SecretStr | None = None
 
     # CORS
-    BACKEND_CORS_ORIGINS: List[AnyHttpUrl] = []
+    BACKEND_CORS_ORIGINS: list[AnyHttpUrl] = []
 
     @field_validator("CIRCLE_API_KEY", "ENTITY_SECRET")
     @classmethod
