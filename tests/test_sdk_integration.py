@@ -26,14 +26,12 @@ Run with:
     pytest tests/test_sdk_integration.py -v -s
 """
 
-import asyncio
 import json
-import pytest
 from decimal import Decimal
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock
 
 import httpx
-
+import pytest
 
 # =============================================================================
 # USER STORIES / DEV STORIES
@@ -191,9 +189,11 @@ def create_mock_wallet_set(wallet_set_id: str = "ws-1") -> dict:
 
 
 def create_402_response(
-    schemes: list[str] = ["exact"], network: str = "eip155:84532", amount: str = "1000"
+    schemes: list[str] = None, network: str = "eip155:84532", amount: str = "1000"
 ) -> httpx.Response:
     """Create a mock 402 response."""
+    if schemes is None:
+        schemes = ["exact"]
     accepts = []
     usdc_contract = "0x036CbD53842c5426634e7929541eC2318f3dCF7e"
     seller_address = "0x742d35Cc6634C0532925a3b844Bc9e7595f1E123"
@@ -264,7 +264,7 @@ def create_200_response(data: dict = None) -> httpx.Response:
 # =============================================================================
 
 
-class TestStory1_WalletCreation:
+class TestStory1WalletCreation:
     """
     STORY 1: Agent Wallet Creation
 
@@ -291,39 +291,13 @@ class TestStory1_WalletCreation:
         print(f"  Blockchain: {wallet['blockchain']}")
         print(f"  Address: {wallet['address'][:20]}...")
 
-    def test_eoa_key_generated(self):
-        """Test that EOA signing key is automatically generated."""
-        print("\n" + "-" * 40)
-        print("Test: EOA Key Auto-Generation")
-
-        # When wallet is created, EOA key should be generated
-        # The key is stored in vault with alias "wallet:{wallet_id}"
-
-        wallet_id = "agent-xyz789"
-        key_alias = f"wallet:{wallet_id}"
-
-        # Simulate key generation
-        key_data = {
-            "alias": key_alias,
-            "address": "0x742d35Cc6634C0532925a3b844Bc9e7595f1E123",
-            "network": "eip155:84532",
-        }
-
-        assert key_data["alias"] == f"wallet:{wallet_id}"
-        assert key_data["address"].startswith("0x")
-        assert len(key_data["address"]) == 42
-
-        print(f"✓ EOA key generated for wallet")
-        print(f"  Alias: {key_data['alias']}")
-        print(f"  Address: {key_data['address'][:20]}...")
-
 
 # =============================================================================
 # STORY 2: Get Payment Address
 # =============================================================================
 
 
-class TestStory2_PaymentAddress:
+class TestStory2PaymentAddress:
     """
     STORY 2: Get Payment Address
 
@@ -346,10 +320,10 @@ class TestStory2_PaymentAddress:
         assert payment_address.startswith("0x")
         assert len(payment_address) == 42
 
-        print(f"✓ Payment address retrieved")
+        print("✓ Payment address retrieved")
         print(f"  Wallet: {wallet_id}")
         print(f"  Address: {payment_address}")
-        print(f"  Fund this address with USDC to make x402 payments")
+        print("  Fund this address with USDC to make x402 payments")
 
     def test_same_address_for_both_payment_types(self):
         """Test that same address works for basic x402 and nanopayment."""
@@ -362,10 +336,10 @@ class TestStory2_PaymentAddress:
         # 1. Basic x402 (USDC stays in EOA)
         # 2. Circle nanopayment (USDC deposited to Gateway)
 
-        print(f"✓ Same address used for both payment types")
+        print("✓ Same address used for both payment types")
         print(f"  Address: {address}")
-        print(f"  - Basic x402: USDC stays in EOA")
-        print(f"  - Nanopayment: Deposit to Gateway first")
+        print("  - Basic x402: USDC stays in EOA")
+        print("  - Nanopayment: Deposit to Gateway first")
 
 
 # =============================================================================
@@ -373,7 +347,7 @@ class TestStory2_PaymentAddress:
 # =============================================================================
 
 
-class TestStory3_PayToAddress:
+class TestStory3PayToAddress:
     """
     STORY 3: Pay to Address
 
@@ -400,11 +374,11 @@ class TestStory3_PayToAddress:
             "status": "completed",
         }
 
-        assert result["success"] == True
+        assert result["success"]
         assert result["transaction_id"] is not None
         assert Decimal(result["amount"]) == amount
 
-        print(f"✓ Payment successful")
+        print("✓ Payment successful")
         print(f"  From: {wallet_id}")
         print(f"  To: {recipient[:20]}...")
         print(f"  Amount: ${amount}")
@@ -427,7 +401,7 @@ class TestStory3_PayToAddress:
         assert ledger_entry["id"] is not None
         assert ledger_entry["status"] == "completed"
 
-        print(f"✓ Transaction tracked in ledger")
+        print("✓ Transaction tracked in ledger")
         print(f"  Entry ID: {ledger_entry['id']}")
         print(f"  Status: {ledger_entry['status']}")
 
@@ -437,7 +411,7 @@ class TestStory3_PayToAddress:
 # =============================================================================
 
 
-class TestStory4_PayViaX402:
+class TestStory4PayViaX402:
     """
     STORY 4: Pay via x402 URL
 
@@ -469,7 +443,7 @@ class TestStory4_PayViaX402:
         else:
             method = "Basic x402 (on-chain)"
 
-        print(f"✓ Smart routing works")
+        print("✓ Smart routing works")
         print(f"  URL: {url}")
         print(f"  Seller accepts: {schemes}")
         print(f"  → Using: {method}")
@@ -488,9 +462,9 @@ class TestStory4_PayViaX402:
 
         supports_circle = any(a["scheme"] == "GatewayWalletBatched" for a in accepts)
 
-        assert supports_circle == True
+        assert supports_circle
 
-        print(f"✓ Circle nanopayment detected")
+        print("✓ Circle nanopayment detected")
         print(f"  Accepts: {[a['scheme'] for a in accepts]}")
 
     def test_x402_free_resource(self):
@@ -503,7 +477,7 @@ class TestStory4_PayViaX402:
         # Not a 402 means free resource
         if mock_200.status_code != 402:
             result = mock_200.json()
-            print(f"✓ Free resource returned")
+            print("✓ Free resource returned")
             print(f"  Data: {result}")
         else:
             pytest.fail("Should be 200, not 402")
@@ -514,7 +488,7 @@ class TestStory4_PayViaX402:
 # =============================================================================
 
 
-class TestStory5_BudgetGuard:
+class TestStory5BudgetGuard:
     """
     STORY 5: Add Budget Guard
 
@@ -542,7 +516,7 @@ class TestStory5_BudgetGuard:
 
         assert guard["limit"] == "100.00"
 
-        print(f"✓ Daily budget guard added")
+        print("✓ Daily budget guard added")
         print(f"  Wallet: {wallet_id}")
         print(f"  Limit: ${daily_limit}/day")
 
@@ -557,12 +531,12 @@ class TestStory5_BudgetGuard:
         # Check if would exceed
         would_exceed = payment_amount > daily_limit
 
-        assert would_exceed == True
+        assert would_exceed
 
-        print(f"✓ Payment blocked (exceeds budget)")
+        print("✓ Payment blocked (exceeds budget)")
         print(f"  Budget: ${daily_limit}")
         print(f"  Payment: ${payment_amount}")
-        print(f"  Result: BLOCKED")
+        print("  Result: BLOCKED")
 
     def test_payment_within_budget_allowed(self):
         """Test that payment within budget is allowed."""
@@ -574,12 +548,12 @@ class TestStory5_BudgetGuard:
 
         would_exceed = payment_amount > daily_limit
 
-        assert would_exceed == False
+        assert not would_exceed
 
-        print(f"✓ Payment allowed (within budget)")
+        print("✓ Payment allowed (within budget)")
         print(f"  Budget: ${daily_limit}")
         print(f"  Payment: ${payment_amount}")
-        print(f"  Result: ALLOWED")
+        print("  Result: ALLOWED")
 
 
 # =============================================================================
@@ -587,7 +561,7 @@ class TestStory5_BudgetGuard:
 # =============================================================================
 
 
-class TestStory6_RecipientWhitelist:
+class TestStory6RecipientWhitelist:
     """
     STORY 6: Add Recipient Whitelist
 
@@ -618,8 +592,8 @@ class TestStory6_RecipientWhitelist:
         assert guard["mode"] == "whitelist"
         assert len(guard["addresses"]) == 2
 
-        print(f"✓ Whitelist guard added")
-        print(f"  Mode: whitelist")
+        print("✓ Whitelist guard added")
+        print("  Mode: whitelist")
         print(f"  Allowed: {len(whitelist)} addresses")
 
     def test_whitelisted_address_allowed(self):
@@ -634,9 +608,9 @@ class TestStory6_RecipientWhitelist:
 
         is_allowed = recipient in whitelist
 
-        assert is_allowed == True
+        assert is_allowed
 
-        print(f"✓ Payment to whitelisted address allowed")
+        print("✓ Payment to whitelisted address allowed")
         print(f"  Recipient: {recipient[:20]}...")
 
     def test_non_whitelisted_address_blocked(self):
@@ -651,9 +625,9 @@ class TestStory6_RecipientWhitelist:
 
         is_allowed = recipient in whitelist
 
-        assert is_allowed == False
+        assert not is_allowed
 
-        print(f"✓ Payment to non-whitelisted address blocked")
+        print("✓ Payment to non-whitelisted address blocked")
         print(f"  Recipient: {recipient[:20]}...")
 
 
@@ -662,7 +636,7 @@ class TestStory6_RecipientWhitelist:
 # =============================================================================
 
 
-class TestStory7_TransactionHistory:
+class TestStory7TransactionHistory:
     """
     STORY 7: Transaction History
 
@@ -698,7 +672,7 @@ class TestStory7_TransactionHistory:
 
         assert len(transactions) == 2
 
-        print(f"✓ Transaction history retrieved")
+        print("✓ Transaction history retrieved")
         print(f"  Total: {len(transactions)} transactions")
         for tx in transactions:
             print(f"  - {tx['id']}: ${tx['amount']} → {tx['recipient'][:10]}...")
@@ -713,7 +687,7 @@ class TestStory7_TransactionHistory:
         for status in statuses:
             print(f"  - {status}")
 
-        print(f"✓ All statuses supported")
+        print("✓ All statuses supported")
 
 
 # =============================================================================
@@ -721,7 +695,7 @@ class TestStory7_TransactionHistory:
 # =============================================================================
 
 
-class TestStory8_PaymentIntents:
+class TestStory8PaymentIntents:
     """
     STORY 8: Payment Intents (2-Phase Commit)
 
@@ -747,10 +721,10 @@ class TestStory8_PaymentIntents:
 
         assert intent["status"] == "reserved"
 
-        print(f"✓ Payment intent created")
+        print("✓ Payment intent created")
         print(f"  ID: {intent['id']}")
         print(f"  Amount: ${amount}")
-        print(f"  Status: reserved")
+        print("  Status: reserved")
 
     def test_execute_intent(self):
         """Test executing a payment intent."""
@@ -766,9 +740,9 @@ class TestStory8_PaymentIntents:
             "transaction_id": "tx_xyz789",
         }
 
-        assert result["success"] == True
+        assert result["success"]
 
-        print(f"✓ Intent executed")
+        print("✓ Intent executed")
         print(f"  Intent: {intent_id}")
         print(f"  TX: {result['transaction_id']}")
 
@@ -787,8 +761,8 @@ class TestStory8_PaymentIntents:
 
         assert result["status"] == "released"
 
-        print(f"✓ Intent released")
-        print(f"  Funds returned to wallet")
+        print("✓ Intent released")
+        print("  Funds returned to wallet")
 
 
 # =============================================================================
@@ -796,7 +770,7 @@ class TestStory8_PaymentIntents:
 # =============================================================================
 
 
-class TestStory9_InsufficientBalance:
+class TestStory9InsufficientBalance:
     """
     STORY 9: Insufficient Balance
 
@@ -815,9 +789,9 @@ class TestStory9_InsufficientBalance:
 
         has_sufficient = wallet_balance >= payment_amount
 
-        assert has_sufficient == False
+        assert not has_sufficient
 
-        print(f"✓ Insufficient balance detected")
+        print("✓ Insufficient balance detected")
         print(f"  Wallet balance: ${wallet_balance}")
         print(f"  Payment amount: ${payment_amount}")
         print(f"  Shortfall: ${payment_amount - wallet_balance}")
@@ -837,7 +811,7 @@ class TestStory9_InsufficientBalance:
         assert "current_balance" in error
         assert "required_amount" in error
 
-        print(f"✓ Error includes all details")
+        print("✓ Error includes all details")
         print(f"  {error['message']}")
 
 
@@ -846,7 +820,7 @@ class TestStory9_InsufficientBalance:
 # =============================================================================
 
 
-class TestStory10_GatewayOperations:
+class TestStory10GatewayOperations:
     """
     STORY 10: Circle Gateway Operations
 
@@ -860,7 +834,6 @@ class TestStory10_GatewayOperations:
         print("STORY 10: Circle Gateway Operations")
         print("=" * 60)
 
-        wallet_id = "agent-123"
         amount = "100.00"
 
         result = {
@@ -872,7 +845,7 @@ class TestStory10_GatewayOperations:
         assert result["approval_tx_hash"] is not None
         assert result["deposit_tx_hash"] is not None
 
-        print(f"✓ Deposit to Gateway successful")
+        print("✓ Deposit to Gateway successful")
         print(f"  Amount: ${amount}")
         print(f"  Approval TX: {result['approval_tx_hash'][:20]}...")
         print(f"  Deposit TX: {result['deposit_tx_hash'][:20]}...")
@@ -892,7 +865,7 @@ class TestStory10_GatewayOperations:
 
         assert result["status"] == "success"
 
-        print(f"✓ Withdraw from Gateway successful")
+        print("✓ Withdraw from Gateway successful")
         print(f"  Amount: ${amount}")
         print(f"  TX: {result['mint_tx_hash'][:20]}...")
 
@@ -907,7 +880,7 @@ class TestStory10_GatewayOperations:
             "pending": "25.00",
         }
 
-        print(f"✓ Gateway balance retrieved")
+        print("✓ Gateway balance retrieved")
         print(f"  Total: ${balance['total']}")
         print(f"  Available: ${balance['available']}")
         print(f"  Pending: ${balance['pending']}")

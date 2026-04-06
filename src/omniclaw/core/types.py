@@ -157,6 +157,43 @@ def normalize_network(network: Network | str | None) -> Network | None:
     return Network.from_string(str(network))
 
 
+def network_to_caip2(network: Network | str | None) -> str | None:
+    """
+    Convert a Network (or network string) to CAIP-2 format for Gateway nanopayments.
+
+    Returns None when the network cannot be mapped.
+    """
+    if network is None:
+        return None
+    if isinstance(network, str):
+        normalized = network.strip()
+        if ":" in normalized:
+            return normalized.lower()
+        try:
+            network = Network.from_string(normalized)
+        except Exception:
+            return None
+
+    caip2_map = {
+        Network.ETH: "eip155:1",
+        Network.ETH_SEPOLIA: "eip155:11155111",
+        Network.AVAX: "eip155:43114",
+        Network.AVAX_FUJI: "eip155:43113",
+        Network.MATIC: "eip155:137",
+        Network.MATIC_AMOY: "eip155:80002",
+        Network.ARB: "eip155:42161",
+        Network.ARB_SEPOLIA: "eip155:421614",
+        Network.BASE: "eip155:8453",
+        Network.BASE_SEPOLIA: "eip155:84532",
+        Network.OP: "eip155:10",
+        Network.OP_SEPOLIA: "eip155:11155420",
+        Network.UNI: "eip155:130",
+        Network.UNI_SEPOLIA: "eip155:1301",
+        Network.ARC_TESTNET: "eip155:5042002",
+    }
+    return caip2_map.get(network)
+
+
 class PaymentStrategy(str, Enum):
     """Strategy for handling payment execution reliability."""
 

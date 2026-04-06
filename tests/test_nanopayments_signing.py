@@ -22,6 +22,7 @@ from omniclaw.protocols.nanopayments import (
 from omniclaw.protocols.nanopayments.exceptions import (
     InvalidPrivateKeyError,
     SigningError,
+    UnsupportedNetworkError,
     UnsupportedSchemeError,
 )
 from omniclaw.protocols.nanopayments.signing import (
@@ -41,7 +42,6 @@ from omniclaw.protocols.nanopayments.types import (
     PaymentRequirementsExtra,
     PaymentRequirementsKind,
 )
-
 
 # =============================================================================
 # TEST FIXTURES
@@ -919,7 +919,7 @@ class TestSigningCoverageMissing:
             ),
         )
 
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(UnsupportedNetworkError) as exc_info:
             signer.sign_transfer_with_authorization(requirements=req, amount_atomic=1000)
         assert "network" in str(exc_info.value).lower()
 
@@ -943,7 +943,7 @@ class TestSigningCoverageMissing:
             ),
         )
 
-        with pytest.raises(Exception):
+        with pytest.raises(UnsupportedNetworkError):
             signer.sign_transfer_with_authorization(requirements=req, amount_atomic=1000)
 
     def test_verify_signature_async_recovery_exception(self):
@@ -1029,11 +1029,12 @@ class TestSigningCoverageAdditional:
 
     def test_sign_transfer_message_sign_exception(self):
         """Lines 469-470: sign_message raises exception raises SigningError."""
+        from unittest.mock import patch
+
         from omniclaw.protocols.nanopayments.types import (
             PaymentRequirementsExtra,
             PaymentRequirementsKind,
         )
-        from unittest.mock import patch
 
         signer = EIP3009Signer(
             private_key="0x250716a653d2155d15bfb1e1ded08b6764937ca6ab3cdd7e2f0510c975fb5652"

@@ -11,14 +11,12 @@ Each test tells a story of an actual agent-to-agent payment.
 """
 
 from decimal import Decimal
-from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from omniclaw.identity.resolver import IdentityResolver
 from omniclaw.identity.types import (
     AgentIdentity,
-    AgentService,
     FeedbackSignal,
     ReputationScore,
     TrustCheckResult,
@@ -26,11 +24,9 @@ from omniclaw.identity.types import (
     TrustVerdict,
 )
 from omniclaw.storage.memory import InMemoryStorage
-from omniclaw.trust.cache import TrustCache
 from omniclaw.trust.gate import TrustGate
 from omniclaw.trust.policy import PolicyEngine
 from omniclaw.trust.scoring import ReputationAggregator
-
 
 # ─────────────────────────────────────────────────────────────────
 # Realistic Test Data — Simulates Real ERC-8004 Agents
@@ -40,7 +36,7 @@ REAL_REGISTRATION_FILE = {
     "type": "https://eips.ethereum.org/EIPS/eip-8004#registration-v1",
     "name": "DataPipelineAgent",
     "description": "Enterprise-grade data pipeline agent for ETL processing. "
-                   "Handles structured and unstructured data. Pricing: $0.10/MB.",
+    "Handles structured and unstructured data. Pricing: $0.10/MB.",
     "image": "https://datapipeline.agent/logo.png",
     "services": [
         {
@@ -81,6 +77,7 @@ def _make_realistic_signals(
 ) -> list[FeedbackSignal]:
     """Generate realistic feedback signals like real Reputation Registry data."""
     import random
+
     random.seed(42)  # Deterministic for tests
 
     signals = []
@@ -92,27 +89,31 @@ def _make_realistic_signals(
         tag1 = "starred" if score >= 80 else "successRate"
         tag2 = ""
 
-        signals.append(FeedbackSignal(
-            agent_id=agent_id,
-            client_address=client,
-            feedback_index=i + 1,
-            value=score,
-            value_decimals=0,
-            tag1=tag1,
-            tag2=tag2,
-        ))
+        signals.append(
+            FeedbackSignal(
+                agent_id=agent_id,
+                client_address=client,
+                feedback_index=i + 1,
+                value=score,
+                value_decimals=0,
+                tag1=tag1,
+                tag2=tag2,
+            )
+        )
 
     # Add fraud signal if requested
     if include_fraud:
-        signals.append(FeedbackSignal(
-            agent_id=agent_id,
-            client_address="0xFraudReporter",
-            feedback_index=count + 1,
-            value=0,
-            value_decimals=0,
-            tag1="fraud",
-            tag2="scam",
-        ))
+        signals.append(
+            FeedbackSignal(
+                agent_id=agent_id,
+                client_address="0xFraudReporter",
+                feedback_index=count + 1,
+                value=0,
+                value_decimals=0,
+                tag1="fraud",
+                tag2="scam",
+            )
+        )
 
     # Mark some as revoked
     for i in range(min(include_revoked, len(signals))):
@@ -129,14 +130,16 @@ def _make_realistic_signals(
 
     # Add self-review
     if include_self_review:
-        signals.append(FeedbackSignal(
-            agent_id=agent_id,
-            client_address=agent_owner,
-            feedback_index=count + 2,
-            value=100,
-            value_decimals=0,
-            tag1="starred",
-        ))
+        signals.append(
+            FeedbackSignal(
+                agent_id=agent_id,
+                client_address=agent_owner,
+                feedback_index=count + 2,
+                value=100,
+                value_decimals=0,
+                tag1="starred",
+            )
+        )
 
     return signals
 
@@ -144,6 +147,7 @@ def _make_realistic_signals(
 # ─────────────────────────────────────────────────────────────────
 # Scenario 1: Healthy, Established Agent
 # ─────────────────────────────────────────────────────────────────
+
 
 class TestScenarioEstablishedAgent:
     """
@@ -167,7 +171,8 @@ class TestScenarioEstablishedAgent:
     def test_wts_computation(self):
         """15 signals with avg 82 → WTS ~80-84."""
         score = self.scorer.compute_wts(
-            self.signals, agent_owner_address="0xAgentOwner",
+            self.signals,
+            agent_owner_address="0xAgentOwner",
         )
         assert 75 <= score.wts <= 90  # Should be around 82 ± noise
         assert score.new_agent is False
@@ -178,7 +183,11 @@ class TestScenarioEstablishedAgent:
         """Should pass permissive policy easily."""
         score = self.scorer.compute_wts(self.signals)
         result = self.engine.evaluate(
-            self.identity, score, Decimal("100"), "0xAgent", TrustPolicy.permissive(),
+            self.identity,
+            score,
+            Decimal("100"),
+            "0xAgent",
+            TrustPolicy.permissive(),
         )
         assert result.verdict == TrustVerdict.APPROVED
         assert result.identity_found is True
@@ -187,7 +196,11 @@ class TestScenarioEstablishedAgent:
         """Should pass standard policy (WTS > 50, > 3 feedback)."""
         score = self.scorer.compute_wts(self.signals)
         result = self.engine.evaluate(
-            self.identity, score, Decimal("100"), "0xAgent", TrustPolicy.standard(),
+            self.identity,
+            score,
+            Decimal("100"),
+            "0xAgent",
+            TrustPolicy.standard(),
         )
         assert result.verdict == TrustVerdict.APPROVED
 
@@ -195,7 +208,11 @@ class TestScenarioEstablishedAgent:
         """Should pass strict policy (WTS > 70, has kyb attestation)."""
         score = self.scorer.compute_wts(self.signals)
         result = self.engine.evaluate(
-            self.identity, score, Decimal("100"), "0xAgent", TrustPolicy.strict(),
+            self.identity,
+            score,
+            Decimal("100"),
+            "0xAgent",
+            TrustPolicy.strict(),
         )
         assert result.verdict == TrustVerdict.APPROVED
 
@@ -207,7 +224,11 @@ class TestScenarioEstablishedAgent:
         # With strict policy, LOW_WTS may trigger first (min_wts=70)
         # or HIGH_VALUE_WTS_FAIL (min_wts_hv=85) — both are correct blocks
         result = self.engine.evaluate(
-            self.identity, score, Decimal("1000"), "0xAgent", TrustPolicy.strict(),
+            self.identity,
+            score,
+            Decimal("1000"),
+            "0xAgent",
+            TrustPolicy.strict(),
         )
         assert result.verdict in (TrustVerdict.HELD, TrustVerdict.BLOCKED)
         assert result.block_reason in ("HIGH_VALUE_WTS_FAIL", "LOW_WTS")
@@ -216,6 +237,7 @@ class TestScenarioEstablishedAgent:
 # ─────────────────────────────────────────────────────────────────
 # Scenario 2: Brand New Agent (No History)
 # ─────────────────────────────────────────────────────────────────
+
 
 class TestScenarioNewAgent:
     """
@@ -246,7 +268,11 @@ class TestScenarioNewAgent:
         """Permissive policy lets new agents through."""
         score = self.scorer.compute_wts(self.signals)
         result = self.engine.evaluate(
-            self.identity, score, Decimal("10"), "0xNew", TrustPolicy.permissive(),
+            self.identity,
+            score,
+            Decimal("10"),
+            "0xNew",
+            TrustPolicy.permissive(),
         )
         assert result.verdict == TrustVerdict.APPROVED
 
@@ -254,7 +280,11 @@ class TestScenarioNewAgent:
         """Standard policy holds new agents for review."""
         score = self.scorer.compute_wts(self.signals)
         result = self.engine.evaluate(
-            self.identity, score, Decimal("10"), "0xNew", TrustPolicy.standard(),
+            self.identity,
+            score,
+            Decimal("10"),
+            "0xNew",
+            TrustPolicy.standard(),
         )
         assert result.verdict == TrustVerdict.HELD
         assert result.block_reason == "NEW_AGENT"
@@ -263,7 +293,11 @@ class TestScenarioNewAgent:
         """Strict policy holds new agents."""
         score = self.scorer.compute_wts(self.signals)
         result = self.engine.evaluate(
-            self.identity, score, Decimal("10"), "0xNew", TrustPolicy.strict(),
+            self.identity,
+            score,
+            Decimal("10"),
+            "0xNew",
+            TrustPolicy.strict(),
         )
         assert result.verdict == TrustVerdict.HELD
         # Should hit NEW_AGENT before MISSING_ATTESTATIONS
@@ -273,6 +307,7 @@ class TestScenarioNewAgent:
 # ─────────────────────────────────────────────────────────────────
 # Scenario 3: Fraudulent Agent
 # ─────────────────────────────────────────────────────────────────
+
 
 class TestScenarioFraudulentAgent:
     """
@@ -291,7 +326,8 @@ class TestScenarioFraudulentAgent:
             active=True,
         )
         self.signals = _make_realistic_signals(
-            count=8, avg_score=60,
+            count=8,
+            avg_score=60,
             include_fraud=True,
             include_revoked=3,  # 3 original clients revoked after getting scammed
         )
@@ -307,7 +343,11 @@ class TestScenarioFraudulentAgent:
         """Standard policy blocks fraud-tagged agents."""
         score = self.scorer.compute_wts(self.signals)
         result = self.engine.evaluate(
-            self.identity, score, Decimal("10"), "0xScam", TrustPolicy.standard(),
+            self.identity,
+            score,
+            Decimal("10"),
+            "0xScam",
+            TrustPolicy.standard(),
         )
         assert result.verdict == TrustVerdict.BLOCKED
         assert result.block_reason == "FRAUD_TAG"
@@ -316,7 +356,11 @@ class TestScenarioFraudulentAgent:
         """Even permissive policy blocks known fraud."""
         score = self.scorer.compute_wts(self.signals)
         result = self.engine.evaluate(
-            self.identity, score, Decimal("10"), "0xScam", TrustPolicy.permissive(),
+            self.identity,
+            score,
+            Decimal("10"),
+            "0xScam",
+            TrustPolicy.permissive(),
         )
         assert result.verdict == TrustVerdict.BLOCKED
         assert result.block_reason == "FRAUD_TAG"
@@ -325,6 +369,7 @@ class TestScenarioFraudulentAgent:
 # ─────────────────────────────────────────────────────────────────
 # Scenario 4: Unknown Address (No ERC-8004 Identity)
 # ─────────────────────────────────────────────────────────────────
+
 
 class TestScenarioUnknownAddress:
     """
@@ -339,8 +384,10 @@ class TestScenarioUnknownAddress:
     def test_permissive_approves_unknown(self):
         """Permissive: unknown addresses are fine."""
         result = self.engine.evaluate(
-            identity=None, reputation=None,
-            amount=Decimal("50"), recipient_address="0xRandom",
+            identity=None,
+            reputation=None,
+            amount=Decimal("50"),
+            recipient_address="0xRandom",
             policy=TrustPolicy.permissive(),
         )
         assert result.verdict == TrustVerdict.APPROVED
@@ -349,8 +396,10 @@ class TestScenarioUnknownAddress:
     def test_standard_blocks_unknown(self):
         """Standard: identity required → blocked."""
         result = self.engine.evaluate(
-            identity=None, reputation=None,
-            amount=Decimal("50"), recipient_address="0xRandom",
+            identity=None,
+            reputation=None,
+            amount=Decimal("50"),
+            recipient_address="0xRandom",
             policy=TrustPolicy.standard(),
         )
         assert result.verdict == TrustVerdict.BLOCKED
@@ -359,8 +408,10 @@ class TestScenarioUnknownAddress:
     def test_strict_blocks_unknown(self):
         """Strict: identity required → blocked."""
         result = self.engine.evaluate(
-            identity=None, reputation=None,
-            amount=Decimal("50"), recipient_address="0xRandom",
+            identity=None,
+            reputation=None,
+            amount=Decimal("50"),
+            recipient_address="0xRandom",
             policy=TrustPolicy.strict(),
         )
         assert result.verdict == TrustVerdict.BLOCKED
@@ -369,6 +420,7 @@ class TestScenarioUnknownAddress:
 # ─────────────────────────────────────────────────────────────────
 # Scenario 5: Blocklisted Address
 # ─────────────────────────────────────────────────────────────────
+
 
 class TestScenarioBlocklisted:
     """
@@ -380,8 +432,11 @@ class TestScenarioBlocklisted:
         self.scorer = ReputationAggregator()
         self.engine = PolicyEngine()
         self.identity = AgentIdentity(
-            agent_id=1, wallet_address="0xBlockedAgent",
-            organization="good-corp", name="GoodBot", attestations=["kyb"],
+            agent_id=1,
+            wallet_address="0xBlockedAgent",
+            organization="good-corp",
+            name="GoodBot",
+            attestations=["kyb"],
         )
 
     def test_blocklist_overrides_everything(self):
@@ -394,7 +449,11 @@ class TestScenarioBlocklisted:
             address_blocklist=["0xBlockedAgent"],  # But this wins
         )
         result = self.engine.evaluate(
-            self.identity, score, Decimal("1"), "0xBlockedAgent", policy,
+            self.identity,
+            score,
+            Decimal("1"),
+            "0xBlockedAgent",
+            policy,
         )
         assert result.verdict == TrustVerdict.BLOCKED
         assert result.block_reason == "ADDRESS_BLOCKLISTED"
@@ -403,7 +462,11 @@ class TestScenarioBlocklisted:
         """Blocklist matching is case-insensitive."""
         policy = TrustPolicy(address_blocklist=["0xblockedagent"])
         result = self.engine.evaluate(
-            self.identity, None, Decimal("1"), "0xBlockedAgent", policy,
+            self.identity,
+            None,
+            Decimal("1"),
+            "0xBlockedAgent",
+            policy,
         )
         assert result.verdict == TrustVerdict.BLOCKED
 
@@ -411,6 +474,7 @@ class TestScenarioBlocklisted:
 # ─────────────────────────────────────────────────────────────────
 # Scenario 6: Self-Review Attack
 # ─────────────────────────────────────────────────────────────────
+
 
 class TestScenarioSelfReviewAttack:
     """
@@ -427,20 +491,31 @@ class TestScenarioSelfReviewAttack:
 
         # 10 fake self-reviews (all 100/100)
         for i in range(10):
-            signals.append(FeedbackSignal(
-                agent_id=1, client_address="0xAttacker",
-                feedback_index=i + 1, value=100, value_decimals=0,
-            ))
+            signals.append(
+                FeedbackSignal(
+                    agent_id=1,
+                    client_address="0xAttacker",
+                    feedback_index=i + 1,
+                    value=100,
+                    value_decimals=0,
+                )
+            )
 
         # 2 real reviews (40/100), terrible agent
         for i in range(2):
-            signals.append(FeedbackSignal(
-                agent_id=1, client_address=f"0xReal{i}",
-                feedback_index=11 + i, value=40, value_decimals=0,
-            ))
+            signals.append(
+                FeedbackSignal(
+                    agent_id=1,
+                    client_address=f"0xReal{i}",
+                    feedback_index=11 + i,
+                    value=40,
+                    value_decimals=0,
+                )
+            )
 
         score = self.scorer.compute_wts(
-            signals, agent_owner_address="0xAttacker",
+            signals,
+            agent_owner_address="0xAttacker",
         )
 
         # Only the 2 real reviews should count
@@ -452,6 +527,7 @@ class TestScenarioSelfReviewAttack:
 # ─────────────────────────────────────────────────────────────────
 # Scenario 7: Verified Submitter Boost
 # ─────────────────────────────────────────────────────────────────
+
 
 class TestScenarioVerifiedSubmitters:
     """
@@ -466,18 +542,29 @@ class TestScenarioVerifiedSubmitters:
         """Verified submitters get 1.5x weight → pulls WTS toward their score."""
         signals = [
             # Verified submitter says 90/100 (index 1 — older, gets 0.2 weight)
-            FeedbackSignal(agent_id=1, client_address="0xVerified",
-                           feedback_index=1, value=90, value_decimals=0),
+            FeedbackSignal(
+                agent_id=1,
+                client_address="0xVerified",
+                feedback_index=1,
+                value=90,
+                value_decimals=0,
+            ),
             # Unverified submitter says 60/100 (index 2 — recent, gets 1.0 weight)
-            FeedbackSignal(agent_id=1, client_address="0xUnverified",
-                           feedback_index=2, value=60, value_decimals=0),
+            FeedbackSignal(
+                agent_id=1,
+                client_address="0xUnverified",
+                feedback_index=2,
+                value=60,
+                value_decimals=0,
+            ),
         ]
 
         # Without boost: recency-weighted = (90*0.2 + 60*1.0) / (0.2 + 1.0) = 78/1.2 ≈ 65
         # With boost: (90*0.2*1.5 + 60*1.0) / (0.2*1.5 + 1.0) = (27+60)/(0.3+1.0) = 87/1.3 ≈ 67
         score_without = self.scorer.compute_wts(signals)
         score_with = self.scorer.compute_wts(
-            signals, verified_submitters={"0xVerified"},
+            signals,
+            verified_submitters={"0xVerified"},
         )
         # Verified boost should pull score UP even when signal is older
         assert score_with.wts >= score_without.wts or score_with.verified_submitter_count == 1
@@ -487,6 +574,7 @@ class TestScenarioVerifiedSubmitters:
 # ─────────────────────────────────────────────────────────────────
 # Scenario 8: Negative Feedback Values (ERC-8004 int128)
 # ─────────────────────────────────────────────────────────────────
+
 
 class TestScenarioNegativeValues:
     """
@@ -502,14 +590,32 @@ class TestScenarioNegativeValues:
         """Negative feedback values should clamp to 0 for WTS."""
         signals = [
             # Trading loss: -3.2% → clamped to 0
-            FeedbackSignal(agent_id=1, client_address="0xA",
-                           feedback_index=1, value=-32, value_decimals=1, tag1="tradingYield"),
+            FeedbackSignal(
+                agent_id=1,
+                client_address="0xA",
+                feedback_index=1,
+                value=-32,
+                value_decimals=1,
+                tag1="tradingYield",
+            ),
             # Good score
-            FeedbackSignal(agent_id=1, client_address="0xB",
-                           feedback_index=2, value=80, value_decimals=0, tag1="starred"),
+            FeedbackSignal(
+                agent_id=1,
+                client_address="0xB",
+                feedback_index=2,
+                value=80,
+                value_decimals=0,
+                tag1="starred",
+            ),
             # Another good score
-            FeedbackSignal(agent_id=1, client_address="0xC",
-                           feedback_index=3, value=90, value_decimals=0, tag1="starred"),
+            FeedbackSignal(
+                agent_id=1,
+                client_address="0xC",
+                feedback_index=3,
+                value=90,
+                value_decimals=0,
+                tag1="starred",
+            ),
         ]
         score = self.scorer.compute_wts(signals)
         # Negative clamped to 0, but recency decay also applies
@@ -524,8 +630,13 @@ class TestScenarioNegativeValues:
     def test_all_negative_gives_zero(self):
         """All negative feedback → WTS 0."""
         signals = [
-            FeedbackSignal(agent_id=1, client_address=f"0x{i}",
-                           feedback_index=i + 1, value=-50, value_decimals=0)
+            FeedbackSignal(
+                agent_id=1,
+                client_address=f"0x{i}",
+                feedback_index=i + 1,
+                value=-50,
+                value_decimals=0,
+            )
             for i in range(5)
         ]
         score = self.scorer.compute_wts(signals)
@@ -536,6 +647,7 @@ class TestScenarioNegativeValues:
 # ─────────────────────────────────────────────────────────────────
 # Scenario 9: Registration File Parsing
 # ─────────────────────────────────────────────────────────────────
+
 
 class TestScenarioRegistrationFileParsing:
     """
@@ -568,7 +680,9 @@ class TestScenarioRegistrationFileParsing:
             "description": "The simplest agent",
         }
         identity = AgentIdentity.from_registration_file(
-            agent_id=1, wallet_address="0xMin", data=data,
+            agent_id=1,
+            wallet_address="0xMin",
+            data=data,
         )
         assert identity.name == "MinimalBot"
         assert identity.services == []
@@ -598,34 +712,40 @@ class TestScenarioRegistrationFileParsing:
     def test_value_decimals_examples_from_spec(self):
         """Test all the value/decimals examples from the EIP spec."""
         # starred: 87 / 0 → 87
-        signal = FeedbackSignal(agent_id=1, client_address="0x",
-                                feedback_index=1, value=87, value_decimals=0)
+        signal = FeedbackSignal(
+            agent_id=1, client_address="0x", feedback_index=1, value=87, value_decimals=0
+        )
         assert signal.normalized_score == 87.0
 
         # uptime: 9977 / 2 → 99.77
-        signal = FeedbackSignal(agent_id=1, client_address="0x",
-                                feedback_index=1, value=9977, value_decimals=2)
+        signal = FeedbackSignal(
+            agent_id=1, client_address="0x", feedback_index=1, value=9977, value_decimals=2
+        )
         assert signal.normalized_score == 99.77
 
         # reachable: 1 / 0 → 1 (boolean true)
-        signal = FeedbackSignal(agent_id=1, client_address="0x",
-                                feedback_index=1, value=1, value_decimals=0)
+        signal = FeedbackSignal(
+            agent_id=1, client_address="0x", feedback_index=1, value=1, value_decimals=0
+        )
         assert signal.normalized_score == 1.0
 
         # responseTime: 560 / 0 → 560 (milliseconds, NOT a 0-100 score)
-        signal = FeedbackSignal(agent_id=1, client_address="0x",
-                                feedback_index=1, value=560, value_decimals=0)
+        signal = FeedbackSignal(
+            agent_id=1, client_address="0x", feedback_index=1, value=560, value_decimals=0
+        )
         assert signal.normalized_score == 560.0
 
         # tradingYield: -32 / 1 → -3.2%
-        signal = FeedbackSignal(agent_id=1, client_address="0x",
-                                feedback_index=1, value=-32, value_decimals=1)
+        signal = FeedbackSignal(
+            agent_id=1, client_address="0x", feedback_index=1, value=-32, value_decimals=1
+        )
         assert signal.normalized_score == -3.2
 
 
 # ─────────────────────────────────────────────────────────────────
 # Scenario 10: Full Trust Gate Pipeline (End-to-End)
 # ─────────────────────────────────────────────────────────────────
+
 
 class TestScenarioFullPipeline:
     """
@@ -709,7 +829,7 @@ class TestScenarioFullPipeline:
         assert r1.cache_hit is False
 
         # Second call — cache hit
-        r2 = await gate.evaluate(
+        await gate.evaluate(
             recipient_address="0xAgent",
             amount=Decimal("10"),
         )
@@ -750,6 +870,7 @@ class TestScenarioFullPipeline:
 # Scenario 11: Edge Cases & Boundary Conditions
 # ─────────────────────────────────────────────────────────────────
 
+
 class TestEdgeCases:
     """Test boundary conditions that could crash production."""
 
@@ -760,8 +881,13 @@ class TestEdgeCases:
     def test_exactly_at_wts_threshold(self):
         """WTS exactly at minimum → should PASS."""
         signals = [
-            FeedbackSignal(agent_id=1, client_address=f"0x{i}",
-                           feedback_index=i + 1, value=50, value_decimals=0)
+            FeedbackSignal(
+                agent_id=1,
+                client_address=f"0x{i}",
+                feedback_index=i + 1,
+                value=50,
+                value_decimals=0,
+            )
             for i in range(5)
         ]
         score = self.scorer.compute_wts(signals)
@@ -770,15 +896,23 @@ class TestEdgeCases:
         policy = TrustPolicy(min_wts=50)
         result = self.engine.evaluate(
             AgentIdentity(agent_id=1, wallet_address="0x"),
-            score, Decimal("1"), "0x", policy,
+            score,
+            Decimal("1"),
+            "0x",
+            policy,
         )
         assert result.verdict == TrustVerdict.APPROVED
 
     def test_exactly_at_high_value_threshold(self):
         """Amount exactly at high-value threshold → should check."""
         signals = [
-            FeedbackSignal(agent_id=1, client_address=f"0x{i}",
-                           feedback_index=i + 1, value=72, value_decimals=0)
+            FeedbackSignal(
+                agent_id=1,
+                client_address=f"0x{i}",
+                feedback_index=i + 1,
+                value=72,
+                value_decimals=0,
+            )
             for i in range(5)
         ]
         score = self.scorer.compute_wts(signals)
@@ -790,7 +924,10 @@ class TestEdgeCases:
         # Exactly $500 → should trigger high-value check
         result = self.engine.evaluate(
             AgentIdentity(agent_id=1, wallet_address="0x"),
-            score, Decimal("500"), "0x", policy,
+            score,
+            Decimal("500"),
+            "0x",
+            policy,
         )
         assert result.verdict == TrustVerdict.HELD
         assert result.block_reason == "HIGH_VALUE_WTS_FAIL"
@@ -798,7 +935,11 @@ class TestEdgeCases:
     def test_zero_amount_payment(self):
         """$0 payment (e.g., lookup or free tier) → should pass."""
         result = self.engine.evaluate(
-            None, None, Decimal("0"), "0x", TrustPolicy.permissive(),
+            None,
+            None,
+            Decimal("0"),
+            "0x",
+            TrustPolicy.permissive(),
         )
         assert result.verdict == TrustVerdict.APPROVED
 
@@ -811,16 +952,24 @@ class TestEdgeCases:
         )
         result = self.engine.evaluate(
             AgentIdentity(agent_id=1, wallet_address="0x"),
-            score, Decimal("1000000"), "0x", policy,
+            score,
+            Decimal("1000000"),
+            "0x",
+            policy,
         )
         assert result.verdict == TrustVerdict.HELD
 
     def test_all_feedback_revoked(self):
         """All feedback revoked → like new agent."""
         signals = [
-            FeedbackSignal(agent_id=1, client_address=f"0x{i}",
-                           feedback_index=i + 1, value=90, value_decimals=0,
-                           is_revoked=True)
+            FeedbackSignal(
+                agent_id=1,
+                client_address=f"0x{i}",
+                feedback_index=i + 1,
+                value=90,
+                value_decimals=0,
+                is_revoked=True,
+            )
             for i in range(5)
         ]
         score = self.scorer.compute_wts(signals)
@@ -836,7 +985,11 @@ class TestEdgeCases:
 
         # With None reputation (no signals at all)
         result = self.engine.evaluate(
-            identity, None, Decimal("10"), "0xNew", policy,
+            identity,
+            None,
+            Decimal("10"),
+            "0xNew",
+            policy,
         )
         assert result.verdict == TrustVerdict.HELD
         assert result.block_reason == "NEW_AGENT"
@@ -848,15 +1001,20 @@ class TestEdgeCases:
             org_whitelist=[],
         )
         result = self.engine.evaluate(
-            None, None, Decimal("10"), "0xAnyone", policy,
+            None,
+            None,
+            Decimal("10"),
+            "0xAnyone",
+            policy,
         )
         assert result.verdict == TrustVerdict.APPROVED
 
     def test_recency_decay_with_single_signal(self):
         """Single signal should get full weight (max_index = feedback_index)."""
         signals = [
-            FeedbackSignal(agent_id=1, client_address="0xA",
-                           feedback_index=1, value=75, value_decimals=0),
+            FeedbackSignal(
+                agent_id=1, client_address="0xA", feedback_index=1, value=75, value_decimals=0
+            ),
         ]
         score = self.scorer.compute_wts(signals)
         assert score.wts == 75
@@ -865,14 +1023,21 @@ class TestEdgeCases:
         """Older signals should contribute less to WTS."""
         signals = [
             # Old signal (index 1 / max 100 = 1% → old band → 0.2 weight)
-            FeedbackSignal(agent_id=1, client_address="0xOld",
-                           feedback_index=1, value=20, value_decimals=0),
+            FeedbackSignal(
+                agent_id=1, client_address="0xOld", feedback_index=1, value=20, value_decimals=0
+            ),
             # Recent signal (index 100 / 100 = 100% → recent → 1.0 weight)
-            FeedbackSignal(agent_id=1, client_address="0xRecent",
-                           feedback_index=100, value=90, value_decimals=0),
+            FeedbackSignal(
+                agent_id=1,
+                client_address="0xRecent",
+                feedback_index=100,
+                value=90,
+                value_decimals=0,
+            ),
             # Middle signal (index 50 / 100 = 50% → aging → 0.5 weight)
-            FeedbackSignal(agent_id=1, client_address="0xMiddle",
-                           feedback_index=50, value=60, value_decimals=0),
+            FeedbackSignal(
+                agent_id=1, client_address="0xMiddle", feedback_index=50, value=60, value_decimals=0
+            ),
         ]
         score = self.scorer.compute_wts(signals)
 

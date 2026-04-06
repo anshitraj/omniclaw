@@ -33,6 +33,8 @@ class PayResponse(BaseModel):
     method: str
     error: str | None = None
     requires_confirmation: bool = False
+    confirmation_id: str | None = None
+    response_data: Any | None = None
 
 
 class BalanceResponse(BaseModel):
@@ -135,6 +137,8 @@ class AddressResponse(BaseModel):
     wallet_id: str
     alias: str
     address: str
+    eoa_address: str | None = None
+    circle_wallet_address: str | None = None
 
 
 class WalletInfo(BaseModel):
@@ -171,6 +175,7 @@ class X402PayRequest(BaseModel):
     """X402 Payment request."""
 
     url: str = Field(..., description="x402 Service URL")
+    amount: str | None = Field(None, description="Payment amount in USDC (default: 0.01)")
     method: str = Field("GET", description="HTTP method")
     body: str | None = Field(None, description="Request body")
     headers: dict[str, str] | None = Field(None, description="Request headers")
@@ -184,3 +189,10 @@ class X402VerifyRequest(BaseModel):
     amount: str = Field(..., description="Amount paid")
     sender: str = Field(..., description="Sender address")
     resource: str = Field(..., description="Resource URL")
+
+
+class X402RequirementsRequest(BaseModel):
+    """X402 requirements request for seller-side paid endpoints."""
+
+    amount: str = Field(..., description="Price in USD or atomic units")
+    resource: str = Field(..., description="Protected resource URL")

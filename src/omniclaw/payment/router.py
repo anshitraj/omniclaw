@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
@@ -120,8 +121,20 @@ class PaymentRouter:
         amount_decimal = Decimal(str(amount))
 
         # Resolve source network
-        wallet = self._wallet_service.get_wallet(wallet_id)
-        source_network = Network.from_string(wallet.blockchain)
+        # Try to get from Circle wallet first, then from config default
+        source_network = None
+        try:
+            wallet = self._wallet_service.get_wallet(wallet_id)
+            source_network = Network.from_string(wallet.blockchain)
+        except Exception:
+            # Wallet not in Circle system - try to get network from config default
+            if source_network is None and hasattr(self, "_config"):
+                with contextlib.suppress(Exception):
+                    source_network = self._config.network
+
+            if source_network is None:
+                # Fallback to ETH Sepolia if we can't determine the network
+                source_network = Network.ETH_SEPOLIA
 
         adapters = self._find_adapters(
             recipient,

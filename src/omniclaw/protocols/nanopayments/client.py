@@ -159,8 +159,17 @@ def _to_int(value: Any) -> int:
         return 0
     if isinstance(value, int):
         return value
+    if isinstance(value, str):
+        # Handle decimal strings like "10.000000" (USDC 6 decimals)
+        if "." in value:
+            # Convert decimal to atomic units (6 decimals for USDC)
+            parts = value.split(".")
+            whole = parts[0]
+            frac = (parts[1] + "000000")[:6]
+            return int(whole) * 1_000_000 + int(frac)
+        return int(value)
     try:
-        return int(str(value))
+        return int(value)
     except (ValueError, TypeError):
         return 0
 
@@ -526,17 +535,19 @@ class NanopaymentClient:
             network: CAIP-2 identifier (e.g. 'eip155:5042002').
 
         Returns:
-            The Gateway Wallet contract address on that network.
+            The Gateway Wallet contract address on that network (checksummed).
 
         Raises:
             UnsupportedNetworkError: If the network is not supported.
         """
+        from web3 import Web3
+
         supported = await self.get_supported()
         for kind in supported:
             if kind.network == network:
                 addr = kind.verifying_contract
                 if addr:
-                    return addr
+                    return Web3.to_checksum_address(addr)
         raise UnsupportedNetworkError(network=network)
 
     async def get_usdc_address(self, network: str) -> str:
@@ -547,17 +558,19 @@ class NanopaymentClient:
             network: CAIP-2 identifier.
 
         Returns:
-            The USDC contract address on that network.
+            The USDC contract address on that network (checksummed).
 
         Raises:
             UnsupportedNetworkError: If the network is not supported.
         """
+        from web3 import Web3
+
         supported = await self.get_supported()
         for kind in supported:
             if kind.network == network:
                 addr = kind.usdc_address
                 if addr:
-                    return addr
+                    return Web3.to_checksum_address(addr)
         raise UnsupportedNetworkError(network=network)
 
     # -------------------------------------------------------------------------
@@ -687,10 +700,17 @@ class NanopaymentClient:
             raise _map_settlement_error(error_reason, payer=payer)
 
         if not httpx.codes.is_success(resp.status_code):
+            body_text = resp.text
+            preview = body_text
+            if body_text and len(body_text) > 500:
+                preview = body_text[:500] + "...(truncated)"
             raise GatewayAPIError(
-                message=f"Gateway /settle returned {resp.status_code}",
+                message=(
+                    f"Gateway /settle returned {resp.status_code}"
+                    + (f": {preview}" if preview else "")
+                ),
                 status_code=resp.status_code,
-                response_body=resp.text,
+                response_body=body_text,
             )
 
         data = resp.json()
@@ -734,12 +754,12 @@ class NanopaymentClient:
         """
         await self.get_supported()
 
-        circle_domain_id = _caip2_to_circle_domain_id(network)
+        _caip2_to_circle_domain_id(network)
         body: dict[str, Any] = {
             "token": "USDC",
             "sources": [
                 {
-                    "domain": circle_domain_id,
+                    "network": network,
                     "depositor": address,
                 }
             ],

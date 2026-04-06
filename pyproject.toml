@@ -13,7 +13,7 @@ bump = true
 [project]
 name = "omniclaw"
 dynamic = ["version"]
-description = "The Payment Infrastructure Layer for Autonomous AI Agents"
+description = "Economic Execution and Control Layer for Agentic Systems"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"
@@ -103,9 +103,6 @@ packages = ["src/omniclaw"]
 
 [tool.hatch.build.targets.sdist]
 include = ["src/omniclaw"]
-
-[tool.hatch.build]
-sources = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

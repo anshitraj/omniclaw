@@ -22,4 +22,3 @@ async def test_get_reserved_total_fails_closed_on_corrupted_amount() -> None:
 
     with pytest.raises(ValueError, match="Corrupted reservation amount"):
         await service.get_reserved_total("wallet-1")
-

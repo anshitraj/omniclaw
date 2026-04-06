@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from omniclaw.client import OmniClaw
-from omniclaw.core.exceptions import InsufficientBalanceError, PaymentError, ValidationError
+from omniclaw.core.exceptions import InsufficientBalanceError, ValidationError
 from omniclaw.core.types import Network, PaymentIntentStatus, PaymentMethod, PaymentResult
 
 

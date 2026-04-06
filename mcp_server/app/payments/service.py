@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from typing import Any, Dict
+from typing import Any
 
 import structlog
 from pydantic import BaseModel, Field, field_validator
@@ -38,7 +38,7 @@ class PaymentOrchestrator:
     def __init__(self, client: AbstractPaymentClient):
         self.client = client
 
-    async def pay(self, request_data: Dict[str, Any]) -> Dict[str, Any]:
+    async def pay(self, request_data: dict[str, Any]) -> dict[str, Any]:
         try:
             req = PaymentRequest(**request_data)
         except Exception as exc:

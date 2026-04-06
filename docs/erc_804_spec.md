@@ -1,17 +1,17 @@
 # ERC-8004 Trust Notes
 
-This file is a historical design note for OmniClaw's trust-layer direction. It is not the canonical API reference and should not be treated as a precise description of the current SDK implementation.
+This file is a historical design note for OmniClaw's trust-layer direction. It is not the canonical API reference and should not be treated as a precise description of the current Financial Policy Engine implementation.
 
 Use these docs for the current product surface instead:
 
 - [README](../README.md)
-- [SDK Usage Guide](SDK_USAGE_GUIDE.md)
+- [Financial Policy Engine Usage Guide](SDK_USAGE_GUIDE.md)
 - [API Reference](API_REFERENCE.md)
 - [Architecture and Features](FEATURES.md)
 
 ## Current Reality
 
-OmniClaw already exposes a trust layer through the SDK:
+OmniClaw already exposes a trust layer through the Financial Policy Engine:
 
 - trust checks can run during `pay()` and `simulate()`
 - trust behavior is controlled by `check_trust`
@@ -32,7 +32,7 @@ Those themes still matter, but the exact content of the original internal draft 
 
 ## Recommendation
 
-If this repo keeps evolving quickly, treat trust docs the same way as the rest of the SDK docs:
+If this repo keeps evolving quickly, treat trust docs the same way as the rest of the Financial Policy Engine docs:
 
 - keep implementation details in code and tests
 - keep user-facing behavior in the API reference and usage guide

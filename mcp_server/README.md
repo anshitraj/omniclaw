@@ -1,6 +1,6 @@
 # OmniClaw MCP Server
 
-FastMCP server exposing the current `omniclaw` SDK as MCP tools for agent-facing wallet and payment operations.
+FastMCP server exposing the OmniClaw Financial Policy Engine as MCP tools for agent-facing wallet and payment operations.
 
 This server is not the primary launch artifact for today, but its docs are kept aligned so the repo does not publish stale MCP behavior.
 

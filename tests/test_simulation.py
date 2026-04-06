@@ -34,22 +34,17 @@ async def test_simulation_result_fields(client):
     """Test that SimulationResult has necessary fields populated."""
     # Mock router and balance
     client._router.simulate = AsyncMock()
-    sim_res_mock = AsyncMock()
+    AsyncMock()
     # Return a simulated result
     from omniclaw.core.types import SimulationResult
+
     client._router.simulate.return_value = SimulationResult(
-        would_succeed=True,
-        route=PaymentMethod.TRANSFER,
-        estimated_fee=Decimal("0.05")
+        would_succeed=True, route=PaymentMethod.TRANSFER, estimated_fee=Decimal("0.05")
     )
 
     client._wallet_service.get_usdc_balance_amount = lambda wid: Decimal("100.0")
 
-    res = await client.simulate(
-        wallet_id="wallet-1",
-        recipient="0xabc",
-        amount=Decimal("10.0")
-    )
+    res = await client.simulate(wallet_id="wallet-1", recipient="0xabc", amount=Decimal("10.0"))
 
     assert res.would_succeed is True
     assert res.recipient_type == PaymentMethod.TRANSFER.value
@@ -63,16 +58,12 @@ async def test_simulation_respects_reservations(client):
     """Test that simulation checks available balance (balance - reserved)."""
     # Setup: Balance 100, Reserved 80
     client._wallet_service.get_usdc_balance_amount = lambda wid: Decimal("100.0")
-    
+
     # Reserve 80 immediately
     await client._reservation.reserve("wallet-1", Decimal("80.0"), "intent-1")
 
     # Trying to simulate 30 should fail because available is 20
-    res = await client.simulate(
-        wallet_id="wallet-1",
-        recipient="0xabc",
-        amount=Decimal("30.0")
-    )
+    res = await client.simulate(wallet_id="wallet-1", recipient="0xabc", amount=Decimal("30.0"))
 
     assert res.would_succeed is False
     assert "Insufficient available balance" in res.reason
@@ -86,6 +77,7 @@ async def test_simulation_guards_passed(client):
     client._wallet_service.get_usdc_balance_amount = lambda wid: Decimal("100.0")
     client._router.simulate = AsyncMock()
     from omniclaw.core.types import SimulationResult
+
     client._router.simulate.return_value = SimulationResult(
         would_succeed=True,
         route=PaymentMethod.TRANSFER,
@@ -96,20 +88,14 @@ async def test_simulation_guards_passed(client):
     await client.guards.add_guard("wallet-1", guard)
 
     # Simulate 10.0 (passes guard)
-    res = await client.simulate(
-        wallet_id="wallet-1",
-        recipient="0xabc",
-        amount=Decimal("10.0")
-    )
+    res = await client.simulate(wallet_id="wallet-1", recipient="0xabc", amount=Decimal("10.0"))
 
     assert res.would_succeed is True
     assert "test_guard" in res.guards_that_would_pass
 
     # Simulate 60.0 (fails guard)
     res_fail = await client.simulate(
-        wallet_id="wallet-1",
-        recipient="0xabc",
-        amount=Decimal("60.0")
+        wallet_id="wallet-1", recipient="0xabc", amount=Decimal("60.0")
     )
 
     assert res_fail.would_succeed is False

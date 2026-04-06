@@ -18,9 +18,8 @@ Each test can be run individually:
 """
 
 import os
+
 import pytest
-import asyncio
-from typing import Optional
 
 # Test payment payload/requirements for verification
 TEST_PAYLOAD = {
@@ -48,7 +47,7 @@ TEST_REQUIREMENTS = {
 }
 
 
-def get_api_key(provider: str) -> Optional[str]:
+def get_api_key(provider: str) -> str | None:
     """Get API key from environment or return None if not set."""
     env_vars = {
         "coinbase": "COINBASE_API_KEY",

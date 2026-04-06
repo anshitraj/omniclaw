@@ -5,7 +5,6 @@ Provides gasless USDC micro-payments via Circle Gateway batched settlement.
 Built on EIP-3009 TransferWithAuthorization for off-chain payment authorization.
 
 Architecture:
-    - NanoKeyVault: Secure EOA key management (operator-controlled)
     - EIP3009Signer: Cryptographic signing of payment authorizations
     - NanopaymentClient: Circle Gateway REST API wrapper
     - NanopaymentAdapter: Buyer-side payment execution
@@ -104,10 +103,6 @@ from omniclaw.protocols.nanopayments.client import (
     NanopaymentHTTPClient,
 )
 
-from omniclaw.protocols.nanopayments.keys import NanoKeyStore
-
-from omniclaw.protocols.nanopayments.vault import NanoKeyVault
-
 from omniclaw.protocols.nanopayments.wallet import GatewayWalletManager
 
 from omniclaw.protocols.nanopayments.middleware import (
@@ -163,9 +158,6 @@ __all__ = [
     # Client
     "NanopaymentClient",
     "NanopaymentHTTPClient",
-    # Vault
-    "NanoKeyStore",
-    "NanoKeyVault",
     # Wallet
     "GatewayWalletManager",
     # Adapter

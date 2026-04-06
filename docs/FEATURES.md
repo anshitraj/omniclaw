@@ -1,10 +1,10 @@
 # OmniClaw Architecture and Features
 
-This document explains how the SDK is structured and what each subsystem is responsible for. Use the [SDK Usage Guide](SDK_USAGE_GUIDE.md) for examples and the [API Reference](API_REFERENCE.md) for method signatures.
+This document explains how the Financial Policy Engine is structured and what each subsystem is responsible for.
 
 ## System Overview
 
-OmniClaw is centered on `OmniClaw`, which wires together:
+OmniClaw is centered on the Financial Policy Engine, which wires together:
 
 - configuration loading
 - wallet management
@@ -21,7 +21,7 @@ OmniClaw is centered on `OmniClaw`, which wires together:
 
 ### `OmniClaw`
 
-The top-level client in [client.py](../src/omniclaw/client.py). It exposes the public async SDK surface:
+The top-level client in [client.py](../src/omniclaw/client.py). It exposes the public async Financial Policy Engine surface:
 
 - wallet creation and lookup
 - payment execution and simulation
@@ -49,8 +49,9 @@ The router in [payment/router.py](../src/omniclaw/payment/router.py) chooses an 
 
 Current routing:
 
+- URL -> `NanopaymentProtocolAdapter` (Gateway x402), with fallback to `X402Adapter` if needed
+- address + amount below micro-threshold -> `NanopaymentProtocolAdapter` (Gateway)
 - address -> `TransferAdapter`
-- URL -> `X402Adapter`
 - `destination_chain` set -> `GatewayAdapter`
 
 ### Guards
@@ -118,6 +119,8 @@ Current runtime rules:
 
 Nanopayments enable gas-free USDC transfers via Circle's Gateway nanopayments protocol, built on EIP-3009. They are designed for micro-transactions where gas costs would make regular transfers impractical.
 
+**Gateway CAIP-2 derivation:** Gateway nanopayment CAIP-2 is derived from `OMNICLAW_NETWORK` via `network_to_caip2`. Only EVM networks are supported — non-EVM networks will raise a clear configuration error.
+
 #### Architecture
 
 The nanopayments stack is organized under [protocols/nanopayments/](../src/omniclaw/protocols/nanopayments/):
@@ -125,7 +128,7 @@ The nanopayments stack is organized under [protocols/nanopayments/](../src/omnic
 - `signing.py` — EIP-3009 signature creation (`EIP3009Signer`) and verification
 - `types.py` — `PaymentRequirementsKind`, `PaymentPayload`, `SettleResponse`, `PaymentInfo`, `ResourceInfo`, `SupportedKind`, `GatewayBalance` types
 - `client.py` — `NanopaymentClient` wrapping Circle's Gateway API (settle, verify, get_supported, check_balance)
-- `keys.py` — `NanoKeyVault` for encrypted key management (EOA private keys)
+- `keys.py` — key encryption utilities (legacy; not used in direct-key mode)
 - `middleware.py` — `GatewayMiddleware` (seller-side x402 gate, `@agent.sell()` equivalent)
 - `adapter.py` — `NanopaymentAdapter` (buyer-side payment execution)
 - `wallet.py` — `GatewayWalletManager` (on-chain deposit/withdraw via `depositWithAuthorization`)
@@ -147,19 +150,14 @@ The on-chain settlement is batched — multiple nanopayments settle in a single 
 - **Buyer**: Uses `NanopaymentAdapter` and `NanopaymentClient` to create and send payments via `client.pay()`
 - **Seller**: Uses `GatewayMiddleware` and `@omniclaw.sell()` to protect FastAPI endpoints
 
-#### Key Isolation
+#### Key Management
 
-Agents hold only a `nano_key_alias` (string reference). The actual EOA private key is encrypted in the NanoKeyVault. This means:
-
-- Compromised alias gives no access to funds
-- Keys can be rotated without changing the agent's public address
-- Multiple agents can share the same key or have dedicated keys
+Nanopayment signing uses a single direct private key configured via `OMNICLAW_PRIVATE_KEY`.
 
 #### OmniClaw Integration
 
-`OmniClaw` wires nanopayments into the SDK surface:
+`OmniClaw` wires nanopayments into the Financial Policy Engine surface:
 
-- `client.vault` → `NanoKeyVault` for key management
 - `client.nanopayment_adapter` → `NanopaymentAdapter` for buyer payments
 - `client.gateway()` → `GatewayMiddleware` for seller endpoints
 - `client.sell(price)` → FastAPI `Depends()` for `@agent.sell()`
@@ -196,7 +194,6 @@ Core environment variables:
 
 ```env
 CIRCLE_API_KEY=...
-ENTITY_SECRET=...
 OMNICLAW_NETWORK=ARC-TESTNET
 ```
 
@@ -219,7 +216,7 @@ OMNICLAW_CONFIRM_THRESHOLD=500.00
 
 ## Execution Sequence
 
-For a typical `pay()` call, the SDK does the following:
+For a typical `pay()` call, the Financial Policy Engine does the following:
 
 1. validate arguments
 2. optionally evaluate trust

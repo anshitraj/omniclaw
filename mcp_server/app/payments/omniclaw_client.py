@@ -3,16 +3,16 @@ from dataclasses import asdict, is_dataclass
 from datetime import datetime
 from decimal import Decimal
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 import structlog
+
+from app.core.config import settings
+from app.payments.interfaces import AbstractPaymentClient
 from omniclaw import OmniClaw
 from omniclaw.core.types import AccountType, Network
 from omniclaw.identity.types import TrustPolicy
 from omniclaw.ledger import LedgerEntryStatus, LedgerEntryType
-
-from app.core.config import settings
-from app.payments.interfaces import AbstractPaymentClient
 
 logger = structlog.get_logger(__name__)
 
@@ -26,8 +26,12 @@ class OmniclawPaymentClient(AbstractPaymentClient):
     def __init__(self) -> None:
         network = Network.from_string(settings.OMNICLAW_NETWORK)
         self._client = OmniClaw(
-            circle_api_key=settings.CIRCLE_API_KEY.get_secret_value() if settings.CIRCLE_API_KEY else None,
-            entity_secret=settings.ENTITY_SECRET.get_secret_value() if settings.ENTITY_SECRET else None,
+            circle_api_key=settings.CIRCLE_API_KEY.get_secret_value()
+            if settings.CIRCLE_API_KEY
+            else None,
+            entity_secret=settings.ENTITY_SECRET.get_secret_value()
+            if settings.ENTITY_SECRET
+            else None,
             network=network,
         )
         logger.info(
@@ -67,12 +71,12 @@ class OmniclawPaymentClient(AbstractPaymentClient):
             return {k: OmniclawPaymentClient._serialize(v) for k, v in value.items()}
         if is_dataclass(value):
             return OmniclawPaymentClient._serialize(asdict(value))
-        if hasattr(value, "to_dict") and callable(getattr(value, "to_dict")):
-            raw_dict = getattr(value, "to_dict")()
+        if hasattr(value, "to_dict") and callable(value.to_dict):
+            raw_dict = value.to_dict()
             if isinstance(raw_dict, dict):
                 return OmniclawPaymentClient._serialize(raw_dict)
             return raw_dict
-        if hasattr(value, "guards") and isinstance(getattr(value, "guards"), list):
+        if hasattr(value, "guards") and isinstance(value.guards, list):
             return [getattr(guard, "name", str(guard)) for guard in value.guards]
         return value
 
@@ -87,14 +91,14 @@ class OmniclawPaymentClient(AbstractPaymentClient):
         agent_name: str,
         blockchain: str | None = None,
         apply_default_guards: bool = True,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         wallet_set, wallet = await self._client.create_agent_wallet(
             agent_name=agent_name,
             blockchain=self._as_network(blockchain),
             apply_default_guards=apply_default_guards,
         )
 
-        response: Dict[str, Any] = {
+        response: dict[str, Any] = {
             "wallet_set": self._serialize(wallet_set),
             "wallet": self._serialize(wallet),
         }
@@ -106,15 +110,13 @@ class OmniclawPaymentClient(AbstractPaymentClient):
 
         return response
 
-    async def create_wallet_set(self, name: str | None = None) -> Dict[str, Any]:
+    async def create_wallet_set(self, name: str | None = None) -> dict[str, Any]:
         wallet_set = await self._client.create_wallet_set(name=name)
         return self._serialize(wallet_set)
 
-    async def get_wallet_set(self, wallet_set_id: str) -> Dict[str, Any]:
+    async def get_wallet_set(self, wallet_set_id: str) -> dict[str, Any]:
         wallet_set = await self._client.get_wallet_set(wallet_set_id)
         return self._serialize(wallet_set)
-
-
 
     async def create_wallets(
         self,
@@ -122,7 +124,7 @@ class OmniclawPaymentClient(AbstractPaymentClient):
         wallet_set_id: str | None = None,
         blockchain: str | None = None,
         account_type: str = "EOA",
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         wallets = self._client.wallet.create_wallets(
             count=count,
             wallet_set_id=wallet_set_id,
@@ -137,7 +139,7 @@ class OmniclawPaymentClient(AbstractPaymentClient):
         blockchain: str | None = None,
         account_type: str = "EOA",
         name: str | None = None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         wallet = await self._client.create_wallet(
             wallet_set_id=wallet_set_id,
             blockchain=self._as_network(blockchain),
@@ -146,15 +148,15 @@ class OmniclawPaymentClient(AbstractPaymentClient):
         )
         return self._serialize(wallet)
 
-    async def list_wallet_sets(self) -> List[Dict[str, Any]]:
+    async def list_wallet_sets(self) -> list[dict[str, Any]]:
         wallet_sets = await self._client.list_wallet_sets()
         return self._serialize(wallet_sets)
 
-    async def list_wallets(self, wallet_set_id: str | None = None) -> List[Dict[str, Any]]:
+    async def list_wallets(self, wallet_set_id: str | None = None) -> list[dict[str, Any]]:
         wallets = await self._client.list_wallets(wallet_set_id=wallet_set_id)
         return self._serialize(wallets)
 
-    async def get_wallet(self, wallet_id: str) -> Dict[str, Any]:
+    async def get_wallet(self, wallet_id: str) -> dict[str, Any]:
         wallet = await self._client.get_wallet(wallet_id)
         return self._serialize(wallet)
 
@@ -166,7 +168,7 @@ class OmniclawPaymentClient(AbstractPaymentClient):
         wallet_set_id: str | None = None,
         check_trust: bool | None = None,
         **kwargs: Any,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         simulation = await self._client.simulate(
             wallet_id=wallet_id,
             recipient=recipient,
@@ -195,9 +197,9 @@ class OmniclawPaymentClient(AbstractPaymentClient):
         wait_for_completion: bool = False,
         timeout_seconds: float | None = None,
         **kwargs: Any,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         from omniclaw.core.types import FeeLevel, PaymentStrategy
-        
+
         result = await self._client.pay(
             wallet_id=wallet_id,
             recipient=recipient,
@@ -226,8 +228,8 @@ class OmniclawPaymentClient(AbstractPaymentClient):
         purpose: str | None = None,
         expires_in: int | None = None,
         idempotency_key: str | None = None,
-        metadata: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         intent = await self._client.intent.create(
             wallet_id=wallet_id,
             recipient=recipient,
@@ -239,19 +241,19 @@ class OmniclawPaymentClient(AbstractPaymentClient):
         )
         return self._serialize(intent)
 
-    async def get_payment_intent(self, intent_id: str) -> Dict[str, Any] | None:
+    async def get_payment_intent(self, intent_id: str) -> dict[str, Any] | None:
         intent = await self._client.intent.get(intent_id)
         return self._serialize(intent)
 
-    async def confirm_intent(self, intent_id: str) -> Dict[str, Any]:
+    async def confirm_intent(self, intent_id: str) -> dict[str, Any]:
         result = await self._client.intent.confirm(intent_id)
         return self._serialize(result)
 
-    async def cancel_intent(self, intent_id: str, reason: str | None = None) -> Dict[str, Any]:
+    async def cancel_intent(self, intent_id: str, reason: str | None = None) -> dict[str, Any]:
         result = await self._client.intent.cancel(intent_id=intent_id, reason=reason)
         return self._serialize(result)
 
-    async def get_wallet_usdc_balance(self, wallet_id: str) -> Dict[str, Any]:
+    async def get_wallet_usdc_balance(self, wallet_id: str) -> dict[str, Any]:
         balance = await self._client.get_balance(wallet_id)
         return {
             "wallet_id": wallet_id,
@@ -259,39 +261,39 @@ class OmniclawPaymentClient(AbstractPaymentClient):
             "usdc_balance": str(balance),
         }
 
-    async def get_balances(self, wallet_id: str) -> Dict[str, Any]:
+    async def get_balances(self, wallet_id: str) -> dict[str, Any]:
         balances = self._client.wallet.get_balances(wallet_id)
         return {"wallet_id": wallet_id, "balances": self._serialize(balances)}
 
-    async def list_guards(self, wallet_id: str) -> Dict[str, Any]:
+    async def list_guards(self, wallet_id: str) -> dict[str, Any]:
         guards = await self._client.guards.list_wallet_guard_names(wallet_id)
         return {"wallet_id": wallet_id, "guards": guards}
 
-    async def get_wallet_guards(self, wallet_id: str) -> Dict[str, Any]:
+    async def get_wallet_guards(self, wallet_id: str) -> dict[str, Any]:
         guards = await self._client.guards.get_wallet_guards(wallet_id)
         return {"wallet_id": wallet_id, "guards": self._serialize(guards)}
 
-    async def get_wallet_set_guards(self, wallet_set_id: str) -> Dict[str, Any]:
+    async def get_wallet_set_guards(self, wallet_set_id: str) -> dict[str, Any]:
         guards = await self._client.guards.get_wallet_set_guards(wallet_set_id)
         return {"wallet_set_id": wallet_set_id, "guards": self._serialize(guards)}
 
-    async def list_wallet_set_guard_names(self, wallet_set_id: str) -> Dict[str, Any]:
+    async def list_wallet_set_guard_names(self, wallet_set_id: str) -> dict[str, Any]:
         guards = await self._client.guards.list_wallet_set_guard_names(wallet_set_id)
         return {"wallet_set_id": wallet_set_id, "guards": guards}
 
-    async def remove_guard(self, wallet_id: str, guard_name: str) -> Dict[str, Any]:
+    async def remove_guard(self, wallet_id: str, guard_name: str) -> dict[str, Any]:
         removed = await self._client.guards.remove_guard(wallet_id, guard_name)
         return {"wallet_id": wallet_id, "guard_name": guard_name, "removed": removed}
 
-    async def remove_guard_from_set(self, wallet_set_id: str, guard_name: str) -> Dict[str, Any]:
+    async def remove_guard_from_set(self, wallet_set_id: str, guard_name: str) -> dict[str, Any]:
         removed = await self._client.guards.remove_guard_from_set(wallet_set_id, guard_name)
         return {"wallet_set_id": wallet_set_id, "guard_name": guard_name, "removed": removed}
 
-    async def clear_wallet_guards(self, wallet_id: str) -> Dict[str, Any]:
+    async def clear_wallet_guards(self, wallet_id: str) -> dict[str, Any]:
         await self._client.guards.clear_wallet_guards(wallet_id)
         return {"wallet_id": wallet_id, "cleared": True}
 
-    async def clear_wallet_set_guards(self, wallet_set_id: str) -> Dict[str, Any]:
+    async def clear_wallet_set_guards(self, wallet_set_id: str) -> dict[str, Any]:
         await self._client.guards.clear_wallet_set_guards(wallet_set_id)
         return {"wallet_set_id": wallet_set_id, "cleared": True}
 
@@ -302,8 +304,9 @@ class OmniclawPaymentClient(AbstractPaymentClient):
         hourly_limit: str | None = None,
         total_limit: str | None = None,
         name: str = "budget",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         from omniclaw.guards.budget import BudgetGuard
+
         guard = BudgetGuard(
             name=name,
             daily_limit=Decimal(daily_limit) if daily_limit else None,
@@ -327,8 +330,9 @@ class OmniclawPaymentClient(AbstractPaymentClient):
         max_per_hour: int | None = None,
         max_per_day: int | None = None,
         name: str = "rate_limit",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         from omniclaw.guards.rate_limit import RateLimitGuard
+
         guard = RateLimitGuard(
             name=name,
             max_per_minute=max_per_minute,
@@ -351,8 +355,9 @@ class OmniclawPaymentClient(AbstractPaymentClient):
         max_amount: str,
         min_amount: str | None = None,
         name: str = "single_tx",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         from omniclaw.guards.single_tx import SingleTxGuard
+
         guard = SingleTxGuard(
             name=name,
             max_amount=Decimal(max_amount),
@@ -375,8 +380,9 @@ class OmniclawPaymentClient(AbstractPaymentClient):
         patterns: list[str] | None = None,
         domains: list[str] | None = None,
         name: str = "recipient",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         from omniclaw.guards.recipient import RecipientGuard
+
         guard = RecipientGuard(
             name=name,
             mode=mode,
@@ -401,8 +407,9 @@ class OmniclawPaymentClient(AbstractPaymentClient):
         always_confirm: bool = False,
         threshold: str | None = None,
         name: str = "confirm",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         from omniclaw.guards.confirm import ConfirmGuard
+
         guard = ConfirmGuard(
             name=name,
             always_confirm=always_confirm,
@@ -421,8 +428,8 @@ class OmniclawPaymentClient(AbstractPaymentClient):
         self,
         wallet_set_id: str,
         guard_type: str,
-        config: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        config: dict[str, Any],
+    ) -> dict[str, Any]:
         # Helper that handles generic dict instantiations for set-level guard applications
         from omniclaw.guards.budget import BudgetGuard
         from omniclaw.guards.confirm import ConfirmGuard
@@ -432,7 +439,7 @@ class OmniclawPaymentClient(AbstractPaymentClient):
 
         name = config.get("name", guard_type)
         guard = None
-        
+
         if guard_type == "budget":
             daily_limit = config.get("daily_limit")
             hourly_limit = config.get("hourly_limit")
@@ -482,21 +489,21 @@ class OmniclawPaymentClient(AbstractPaymentClient):
         self,
         wallet_id: str | None = None,
         blockchain: str | None = None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         transactions = await self._client.list_transactions(
             wallet_id=wallet_id,
             blockchain=self._as_network(blockchain),
         )
         return {"transactions": self._serialize(transactions)}
 
-    async def sync_transaction(self, ledger_entry_id: str) -> Dict[str, Any]:
+    async def sync_transaction(self, ledger_entry_id: str) -> dict[str, Any]:
         entry = await self._client.sync_transaction(ledger_entry_id)
         return {"entry": self._serialize(entry)}
 
     async def batch_pay(
         self,
-        requests: List[Dict[str, Any]],
-    ) -> Dict[str, Any]:
+        requests: list[dict[str, Any]],
+    ) -> dict[str, Any]:
         from omniclaw.core.types import PaymentRequest
 
         payment_requests = []
@@ -525,7 +532,7 @@ class OmniclawPaymentClient(AbstractPaymentClient):
         amount: str = "0",
         wallet_id: str | None = None,
         network: str | None = None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         result = await self._client.trust.evaluate(
             recipient_address=recipient_address,
             amount=Decimal(str(amount)),
@@ -534,7 +541,7 @@ class OmniclawPaymentClient(AbstractPaymentClient):
         )
         return {"trust_result": self._serialize(result)}
 
-    async def trust_set_policy(self, wallet_id: str, preset: str) -> Dict[str, Any]:
+    async def trust_set_policy(self, wallet_id: str, preset: str) -> dict[str, Any]:
         normalized = preset.strip().lower()
         if normalized == "permissive":
             policy = TrustPolicy.permissive()
@@ -552,14 +559,14 @@ class OmniclawPaymentClient(AbstractPaymentClient):
             "policy": self._serialize(policy),
         }
 
-    async def trust_get_policy(self, wallet_id: str | None = None) -> Dict[str, Any]:
+    async def trust_get_policy(self, wallet_id: str | None = None) -> dict[str, Any]:
         policy = self._client.trust.get_policy(wallet_id)
         return {
             "wallet_id": wallet_id,
             "policy": self._serialize(policy),
         }
 
-    async def ledger_get_entry(self, entry_id: str) -> Dict[str, Any]:
+    async def ledger_get_entry(self, entry_id: str) -> dict[str, Any]:
         entry = await self._client.ledger.get(entry_id)
         return {"entry": self._serialize(entry)}
 
@@ -573,7 +580,7 @@ class OmniclawPaymentClient(AbstractPaymentClient):
         from_date: str | None = None,
         to_date: str | None = None,
         limit: int = 100,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         parsed_entry_type = LedgerEntryType(entry_type.lower()) if entry_type else None
         parsed_status = LedgerEntryStatus(status.lower()) if status else None
         parsed_from_date = datetime.fromisoformat(from_date) if from_date else None
@@ -591,10 +598,10 @@ class OmniclawPaymentClient(AbstractPaymentClient):
         )
         return {"entries": self._serialize(entries)}
 
-    async def can_pay(self, recipient: str) -> Dict[str, Any]:
+    async def can_pay(self, recipient: str) -> dict[str, Any]:
         return {"recipient": recipient, "can_pay": self._client.can_pay(recipient)}
 
-    async def detect_method(self, recipient: str) -> Dict[str, Any]:
+    async def detect_method(self, recipient: str) -> dict[str, Any]:
         method = self._client.detect_method(recipient)
         return {
             "recipient": recipient,
@@ -606,9 +613,9 @@ class OmniclawPaymentClient(AbstractPaymentClient):
         payload_body: str,
         signature_header: str,
         endpoint_secret: str,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         from omniclaw.webhooks.parser import WebhookParser
-        
+
         parser = WebhookParser(endpoint_secret)
         is_valid = parser.verify_signature(
             payload=payload_body,
@@ -621,9 +628,9 @@ class OmniclawPaymentClient(AbstractPaymentClient):
         payload_body: str,
         signature_header: str,
         endpoint_secret: str,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         from omniclaw.webhooks.parser import WebhookParser
-        
+
         parser = WebhookParser(endpoint_secret)
         event = parser.handle(
             payload=payload_body,

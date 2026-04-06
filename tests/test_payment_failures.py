@@ -12,8 +12,8 @@ from omniclaw.core.exceptions import InsufficientBalanceError
 from omniclaw.core.types import (
     Network,
     PaymentResult,
-    PaymentStrategy,
     PaymentStatus,
+    PaymentStrategy,
 )
 from omniclaw.payment.batch import BatchProcessor
 from omniclaw.payment.router import PaymentRouter
@@ -41,7 +41,7 @@ def client_mocked():
     client._wallet_service.get_usdc_balance.return_value = balance
     client._wallet_service.get_usdc_balance.return_value = balance
     client._wallet_service.get_usdc_balance_amount.return_value = Decimal("1000000.00")
-    
+
     # Configure get_wallet mock to return an object with a valid blockchain string
     mock_wallet = MagicMock()
     mock_wallet.blockchain = "ARC-TESTNET"

@@ -4,8 +4,6 @@ Tests for nanopayments exception hierarchy.
 Phase 1: Foundation
 """
 
-import pytest
-
 from omniclaw.protocols.nanopayments import (
     AuthorizationExpiredError,
     DepositError,
@@ -20,9 +18,7 @@ from omniclaw.protocols.nanopayments import (
     InvalidPrivateKeyError,
     InvalidSignatureError,
     KeyEncryptionError,
-    KeyManagementError,
     KeyNotFoundError,
-    MiddlewareError,
     NanopaymentError,
     NetworkMismatchError,
     NoDefaultKeyError,

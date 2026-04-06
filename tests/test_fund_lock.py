@@ -7,7 +7,6 @@ import pytest
 
 from omniclaw.ledger.lock import FundLockService
 from omniclaw.storage.memory import InMemoryStorage
-from omniclaw.storage.redis import RedisStorage
 
 # Since Redis requires a running instance, we'll primarily test
 # the logic with InMemoryStorage and mock/skip Redis if not available.
@@ -81,7 +80,7 @@ async def test_retry_mechanism(lock_service):
 
     # Acquire lock
     lock_token = await lock_service.acquire(wallet_id, amount)
-    
+
     # Run a background task to release it after 0.2s
     async def delayed_release():
         await asyncio.sleep(0.2)
@@ -92,7 +91,7 @@ async def test_retry_mechanism(lock_service):
     # This should block, then succeed when background task releases it
     lock_token_2 = await lock_service.acquire(wallet_id, amount, retry_count=5, retry_delay=0.1)
     assert lock_token_2 is not None
-    
+
     await lock_service.release_with_key(wallet_id, lock_token_2)
 
 

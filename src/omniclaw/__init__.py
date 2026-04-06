@@ -115,9 +115,6 @@ from omniclaw.protocols.nanopayments import (
     InvalidSignatureError,
     KeyNotFoundError,
     MiddlewareError,
-    NanoKeyStore,
-    # Vault & Keys
-    NanoKeyVault,
     # Adapter
     NanopaymentAdapter,
     # Client
@@ -147,7 +144,7 @@ from omniclaw.protocols.nanopayments import (
 )
 from omniclaw.trust.gate import TrustGate
 
-__version__ = "0.0.2"
+__version__ = "0.0.5"
 __all__ = [
     # Main Client
     "OmniClaw",
@@ -214,9 +211,6 @@ __all__ = [
     # Client
     "NanopaymentClient",
     "NanopaymentHTTPClient",
-    # Vault & Keys
-    "NanoKeyVault",
-    "NanoKeyStore",
     # Adapter
     "NanopaymentAdapter",
     "NanopaymentProtocolAdapter",

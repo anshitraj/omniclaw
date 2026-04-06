@@ -8,9 +8,21 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from decimal import Decimal
+from typing import Any
+from uuid import uuid4
 
 from omniclaw.events import event_emitter
 from omniclaw.guards.base import Guard, GuardResult, PaymentContext
+from omniclaw.guards.confirmations import ConfirmationStore
+
+
+class ConfirmRequiredError(ValueError):
+    """Raised when a payment requires manual confirmation."""
+
+    def __init__(self, confirmation_id: str) -> None:
+        super().__init__("Payment requires confirmation")
+        self.confirmation_id = confirmation_id
+
 
 # Type for confirmation callback
 ConfirmCallback = Callable[[PaymentContext], Awaitable[bool]]
@@ -47,6 +59,8 @@ class ConfirmGuard(Guard):
         self._callback = confirm_callback
         self._threshold = threshold
         self._always_confirm = always_confirm
+        self._storage: Any | None = None
+        self._confirmations: ConfirmationStore | None = None
 
     @property
     def name(self) -> str:
@@ -55,6 +69,10 @@ class ConfirmGuard(Guard):
     @property
     def threshold(self) -> Decimal | None:
         return self._threshold
+
+    def bind_storage(self, storage: Any) -> None:
+        self._storage = storage
+        self._confirmations = ConfirmationStore(storage)
 
     def _needs_confirmation(self, amount: Decimal) -> bool:
         """Check if amount requires confirmation."""
@@ -128,6 +146,51 @@ class ConfirmGuard(Guard):
                 "threshold": str(self._threshold) if self._threshold else None,
             },
         )
+
+    async def reserve(self, context: PaymentContext) -> str | None:
+        """Reserve confirmation or allow if already approved."""
+        if not self._needs_confirmation(context.amount):
+            return None
+
+        # Callback path (if configured) is handled in check()
+        if self._callback is not None:
+            result = await self.check(context)
+            if not result.allowed:
+                raise ValueError(result.reason)
+            return None
+
+        metadata = context.metadata or {}
+        confirmation_id = metadata.get("confirmation_id")
+        if not confirmation_id:
+            idem = metadata.get("idempotency_key")
+            if idem:
+                confirmation_id = f"{context.wallet_id}:{idem}"
+
+        # If confirmation_id provided, check status
+        if confirmation_id and self._confirmations:
+            record = await self._confirmations.get(confirmation_id)
+            if record:
+                status = record.get("status")
+                if status == "APPROVED":
+                    await self._confirmations.consume(confirmation_id)
+                    return None
+                if status == "DENIED":
+                    raise ValueError("Payment confirmation denied")
+
+        # Create a confirmation record
+        if self._confirmations:
+            if not confirmation_id:
+                confirmation_id = str(uuid4())
+            await self._confirmations.create(
+                wallet_id=context.wallet_id,
+                recipient=context.recipient,
+                amount=str(context.amount),
+                purpose=context.purpose,
+                confirmation_id=confirmation_id,
+                idempotency_key=metadata.get("idempotency_key"),
+            )
+
+        raise ConfirmRequiredError(str(confirmation_id))
 
     def reset(self) -> None:
         """No state to reset."""

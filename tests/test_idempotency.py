@@ -12,4 +12,3 @@ def test_derive_idempotency_key_normalizes_equivalent_numeric_inputs() -> None:
 
     assert key_from_decimal == key_from_string
     assert key_from_string == key_from_string_with_whitespace
-

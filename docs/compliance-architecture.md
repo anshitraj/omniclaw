@@ -26,7 +26,7 @@ OmniClaw sits between agent intent and settled payment. That position is deliber
 
 Every payment call in OmniClaw is:
 
-1. **Tied to an explicit agent identity** — the SDK requires the calling agent to be identifiable at the operator level. Anonymous agents cannot initiate payments.
+1. **Tied to an explicit agent identity** — the Financial Policy Engine requires the calling agent to be identifiable at the operator level. Anonymous agents cannot initiate payments.
 
 2. **Bound by operator-defined policy** — spending limits, velocity controls, permitted counterparties, and trust thresholds are set at the operator level before any agent executes. The agent operates within a policy envelope, not around one.
 

@@ -1,13 +1,15 @@
-import structlog
-from fastapi import APIRouter, Request, HTTPException, Header
-from typing import Dict, Any
+from typing import Any
 
 import httpx
+import structlog
+from fastapi import APIRouter, Header, HTTPException, Request
+
 from app.core.config import settings
 from omniclaw.webhooks.parser import InvalidSignatureError, WebhookParser
 
 router = APIRouter()
 logger = structlog.get_logger(__name__)
+
 
 async def _fetch_circle_public_key_by_id(key_id: str) -> str | None:
     """Fetch webhook public key from Circle using X-Circle-Key-Id."""
@@ -31,6 +33,7 @@ async def _fetch_circle_public_key_by_id(key_id: str) -> str | None:
             return str(public_key) if public_key else None
     except Exception:
         return None
+
 
 async def verify_circle_signature(
     request: Request,
@@ -69,6 +72,7 @@ async def verify_circle_signature(
         raise HTTPException(status_code=401, detail=f"Invalid webhook signature: {exc}") from exc
     return True
 
+
 @router.post("/circle")
 async def circle_webhook(
     request: Request,
@@ -85,7 +89,7 @@ async def circle_webhook(
         key_id=x_circle_key_id,
         timestamp=x_circle_timestamp,
     )
-    
+
     payload = await request.json()
     event_type = payload.get("type")
     logger.info("circle_webhook_received", event_type=event_type, payload=payload)
@@ -106,17 +110,20 @@ async def circle_webhook(
         logger.error("webhook_processing_failed", error=str(e), event_type=event_type)
         raise HTTPException(status_code=500, detail="Webhook processing failed")
 
-async def handle_payment_sent(payload: Dict[str, Any]):
+
+async def handle_payment_sent(payload: dict[str, Any]):
     """Handle payment sent event."""
     logger.info("handling_payment_sent", data=payload)
     # implementation details...
 
-async def handle_payment_received(payload: Dict[str, Any]):
+
+async def handle_payment_received(payload: dict[str, Any]):
     """Handle payment received event."""
     logger.info("handling_payment_received", data=payload)
     # implementation details...
 
-async def handle_transaction_failed(payload: Dict[str, Any]):
+
+async def handle_transaction_failed(payload: dict[str, Any]):
     """Handle transaction failed event."""
     logger.info("handling_transaction_failed", data=payload)
     # implementation details...

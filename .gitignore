@@ -41,6 +41,14 @@ htmlcov/
 
 # Logs
 *.log
+logs/
+tmp/
+.runtime/
+output/doc/
+
+# Internal docs / GTM materials
+docs/internal/
 
 # OS
 Thumbs.db
+video/

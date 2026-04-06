@@ -1,12 +1,16 @@
 import base64
+import json
 import os
 import tempfile
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ed25519
 
+from omniclaw.core.events import NotificationType
+from omniclaw.core.exceptions import ValidationError
 from omniclaw.webhooks.parser import DuplicateWebhookError, InvalidSignatureError, WebhookParser
 
 
@@ -109,10 +113,6 @@ def test_no_verification_key():
     headers = {}  # No header needed
     assert parser.verify_signature(payload, headers) is True
 
-import json
-from datetime import datetime, timezone, timedelta
-from omniclaw.core.events import NotificationType
-from omniclaw.core.exceptions import ValidationError
 
 def test_handle_valid_payload(parser, key_pair):
     private_key, _ = key_pair
@@ -122,7 +122,7 @@ def test_handle_valid_payload(parser, key_pair):
         "notificationType": "payment_completed",
         "notificationId": "evt_123",
         "createDate": now_iso,
-        "notification": {"status": "COMPLETE"}
+        "notification": {"status": "COMPLETE"},
     }
     payload = json.dumps(payload_dict)
     signature = sign_payload(private_key, payload)
@@ -130,10 +130,11 @@ def test_handle_valid_payload(parser, key_pair):
         "x-circle-signature": signature,
         "x-circle-timestamp": str(int(datetime.now(timezone.utc).timestamp())),
     }
-    
+
     event = parser.handle(payload, headers)
     assert event.type == NotificationType.PAYMENT_COMPLETED
     assert event.id == "evt_123"
+
 
 def test_handle_missing_createdate(parser, key_pair):
     private_key, _ = key_pair
@@ -141,14 +142,15 @@ def test_handle_missing_createdate(parser, key_pair):
         "notificationType": "payment_completed",
         "notificationId": "evt_123",
         # missing createDate
-        "notification": {"status": "COMPLETE"}
+        "notification": {"status": "COMPLETE"},
     }
     payload = json.dumps(payload_dict)
     signature = sign_payload(private_key, payload)
     headers = {"x-circle-signature": signature}
-    
+
     with pytest.raises(ValidationError, match="createDate"):
         parser.handle(payload, headers)
+
 
 def test_handle_replay_attack(parser, key_pair):
     private_key, _ = key_pair
@@ -158,7 +160,7 @@ def test_handle_replay_attack(parser, key_pair):
         "notificationType": "payment_completed",
         "notificationId": "evt_123",
         "createDate": old_time.isoformat(),
-        "notification": {"status": "COMPLETE"}
+        "notification": {"status": "COMPLETE"},
     }
     payload = json.dumps(payload_dict)
     signature = sign_payload(private_key, payload)
@@ -166,7 +168,7 @@ def test_handle_replay_attack(parser, key_pair):
         "x-circle-signature": signature,
         "x-circle-timestamp": str(int(old_time.timestamp())),
     }
-    
+
     with pytest.raises(InvalidSignatureError, match="replay age window"):
         parser.handle(payload, headers)
 

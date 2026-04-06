@@ -19,18 +19,16 @@ Run:
     pytest tests/test_e2e_seller_buyer.py -v -s
 """
 
-import asyncio
 import base64
 import json
-import pytest
+import os
 import signal
 import subprocess
 import sys
 import time
-import os
 
 import httpx
-
+import pytest
 
 # =============================================================================
 # CONFIGURATION
@@ -60,7 +58,7 @@ def is_server_running():
         result = sock.connect_ex(("127.0.0.1", 4022))
         sock.close()
         return result == 0
-    except:
+    except Exception:
         return False
 
 
@@ -109,7 +107,7 @@ def ensure_test_server():
 # =============================================================================
 
 
-class TestStep1_RequestWithoutPayment:
+class TestStep1RequestWithoutPayment:
     """Step 1: Buyer requests without payment → Seller returns 402."""
 
     def test_seller_returns_402(self):
@@ -142,7 +140,7 @@ class TestStep1_RequestWithoutPayment:
 # =============================================================================
 
 
-class TestStep2_Parse402Response:
+class TestStep2Parse402Response:
     """Step 2: Buyer parses 402 to see what seller accepts."""
 
     def test_parse_payment_required_header(self):
@@ -160,7 +158,7 @@ class TestStep2_Parse402Response:
         header = response.headers["payment-required"]
         decoded = json.loads(base64.b64decode(header))
 
-        print(f"\n  Parsed 402 response:")
+        print("\n  Parsed 402 response:")
         print(f"    x402Version: {decoded.get('x402Version')}")
         print(f"    Error: {decoded.get('error')}")
 
@@ -194,7 +192,7 @@ class TestStep2_Parse402Response:
 # =============================================================================
 
 
-class TestStep3_SmartRouting:
+class TestStep3SmartRouting:
     """Step 3: Buyer decides which payment method to use."""
 
     def test_route_to_basic_x402(self):
@@ -242,7 +240,7 @@ class TestStep3_SmartRouting:
 # =============================================================================
 
 
-class TestStep4_DifferentPrices:
+class TestStep4DifferentPrices:
     """Step 4: Verify different endpoints have different prices."""
 
     def test_weather_price(self):
@@ -286,7 +284,7 @@ class TestStep4_DifferentPrices:
 # =============================================================================
 
 
-class TestStep5_NetworkCompatibility:
+class TestStep5NetworkCompatibility:
     """Step 5: Verify buyer and seller are on same network."""
 
     def test_same_network(self):
@@ -310,7 +308,7 @@ class TestStep5_NetworkCompatibility:
         compatible = buyer_network == seller_network
         print(f"\n  Compatible: {compatible}")
 
-        assert compatible == True
+        assert compatible
 
 
 # =============================================================================
@@ -318,7 +316,7 @@ class TestStep5_NetworkCompatibility:
 # =============================================================================
 
 
-class TestStep6_FullSimulation:
+class TestStep6FullSimulation:
     """Step 6: Simulate complete payment flow."""
 
     @pytest.mark.asyncio
@@ -347,27 +345,24 @@ class TestStep6_FullSimulation:
             accepts = decoded["accepts"]
             schemes = [a.get("scheme") for a in accepts]
 
-            print(f"\n  [2] Buyer parses 402")
+            print("\n  [2] Buyer parses 402")
             print(f"      Seller accepts: {schemes}")
 
             # === STEP 3: Route decision ===
             supports_circle = "GatewayWalletBatched" in schemes
 
-            print(f"\n  [3] Routing decision")
+            print("\n  [3] Routing decision")
             print(f"      Supports Circle: {supports_circle}")
 
-            if supports_circle:
-                route = "Circle Nanopayment"
-            else:
-                route = "Basic x402"
+            route = "Circle Nanopayment" if supports_circle else "Basic x402"
 
             print(f"      → Using: {route}")
 
             # === STEP 4: Create payment (simulated) ===
-            print(f"\n  [4] Create payment")
+            print("\n  [4] Create payment")
             print(f"      From: {BUYER_ADDRESS[:20]}...")
             print(f"      To:   {SELLER_ADDRESS[:20]}...")
-            print(f"      Amount: 1000 atomic ($0.001)")
+            print("      Amount: 1000 atomic ($0.001)")
 
             # In real flow, buyer would:
             # 1. Sign EIP-3009 authorization
@@ -401,11 +396,11 @@ class TestStep6_FullSimulation:
 
             payment_header = b64.b64encode(json.dumps(payload).encode()).decode()
 
-            print(f"\n  [5] Send payment header")
+            print("\n  [5] Send payment header")
             print(f"      Header length: {len(payment_header)} chars")
 
             # === STEP 6: Verify (shows what seller would do) ===
-            print(f"\n  [6] Seller verifies payment")
+            print("\n  [6] Seller verifies payment")
 
             # Check timeout
             current = int(time.time())
@@ -425,7 +420,7 @@ class TestStep6_FullSimulation:
             # === RESULT ===
             all_valid = is_valid_time and is_valid_amount and is_valid_recipient
 
-            print(f"\n  ✓ Flow completed successfully!")
+            print("\n  ✓ Flow completed successfully!")
             print(f"    Payment would be: {'VALID' if all_valid else 'INVALID'}")
 
             assert response.status_code == 402
@@ -436,7 +431,7 @@ class TestStep6_FullSimulation:
 # =============================================================================
 
 
-class TestStep7_RealServerTest:
+class TestStep7RealServerTest:
     """Test against real running server."""
 
     def test_health_endpoint(self):

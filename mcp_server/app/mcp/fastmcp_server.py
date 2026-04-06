@@ -59,10 +59,14 @@ def _fail(tool: str, exc: Exception) -> ToolError:
 
 @mcp.tool()
 async def create_agent_wallet(
-    agent_name: Annotated[str, Field(min_length=1, description="Agent identifier or friendly name")],
+    agent_name: Annotated[
+        str, Field(min_length=1, description="Agent identifier or friendly name")
+    ],
     blockchain: Annotated[
         str | None,
-        Field(default=None, description="Optional network override (e.g. ARC-TESTNET, ETH-SEPOLIA)"),
+        Field(
+            default=None, description="Optional network override (e.g. ARC-TESTNET, ETH-SEPOLIA)"
+        ),
     ] = None,
     apply_default_guards: Annotated[
         bool,
@@ -188,13 +192,17 @@ async def pay(
     amount: Annotated[str, Field(min_length=1, description="USDC amount as string")],
     destination_chain: Annotated[
         str | None,
-        Field(default=None, description="Optional cross-chain destination network (e.g. ARB-MAINNET)"),
+        Field(
+            default=None, description="Optional cross-chain destination network (e.g. ARB-MAINNET)"
+        ),
     ] = None,
     wallet_set_id: Annotated[
         str | None,
         Field(default=None, description="Optional wallet set ID"),
     ] = None,
-    purpose: Annotated[str | None, Field(default=None, description="Optional payment purpose")] = None,
+    purpose: Annotated[
+        str | None, Field(default=None, description="Optional payment purpose")
+    ] = None,
     idempotency_key: Annotated[
         str | None,
         Field(default=None, description="Optional caller-provided idempotency key"),
@@ -205,7 +213,9 @@ async def pay(
     ] = "medium",
     strategy: Annotated[
         str,
-        Field(default="retry_then_fail", description="Execution strategy (fail_fast, retry_then_fail)"),
+        Field(
+            default="retry_then_fail", description="Execution strategy (fail_fast, retry_then_fail)"
+        ),
     ] = "retry_then_fail",
     check_trust: Annotated[
         bool | None,
@@ -249,7 +259,12 @@ async def pay(
 
 @mcp.tool()
 async def batch_pay(
-    requests: Annotated[list[dict[str, Any]], Field(description="List of payment request specifications. Must include wallet_id, recipient, amount, fee_level, destination_chain, idempotency_key")],
+    requests: Annotated[
+        list[dict[str, Any]],
+        Field(
+            description="List of payment request specifications. Must include wallet_id, recipient, amount, fee_level, destination_chain, idempotency_key"
+        ),
+    ],
 ) -> dict[str, Any]:
     """Execute multiple payments as a batch."""
     try:
@@ -277,7 +292,9 @@ async def create_payment_intent(
         Field(default=None, description="Optional intent destination network"),
     ] = None,
     purpose: Annotated[str | None, Field(default=None, description="Intent purpose")] = None,
-    expires_in: Annotated[int | None, Field(default=None, ge=1, description="Intent TTL in seconds")] = None,
+    expires_in: Annotated[
+        int | None, Field(default=None, ge=1, description="Intent TTL in seconds")
+    ] = None,
     idempotency_key: Annotated[
         str | None,
         Field(default=None, description="Optional idempotency key"),
@@ -298,7 +315,7 @@ async def create_payment_intent(
             expires_in=expires_in,
             idempotency_key=idempotency_key,
             metadata=metadata,
-            **({"destination_chain": destination_chain} if destination_chain else {})
+            **({"destination_chain": destination_chain} if destination_chain else {}),
         )
         return {"status": "success", "intent": result}
     except Exception as exc:
@@ -352,8 +369,12 @@ async def cancel_intent(
 
 @mcp.tool()
 async def list_transactions(
-    wallet_id: Annotated[str | None, Field(default=None, description="Optional wallet ID filter")] = None,
-    blockchain: Annotated[str | None, Field(default=None, description="Optional network filter")] = None,
+    wallet_id: Annotated[
+        str | None, Field(default=None, description="Optional wallet ID filter")
+    ] = None,
+    blockchain: Annotated[
+        str | None, Field(default=None, description="Optional network filter")
+    ] = None,
 ) -> dict[str, Any]:
     """List provider transactions for a wallet or globally."""
     try:
@@ -411,9 +432,13 @@ async def detect_payment_method(
 @mcp.tool()
 async def trust_lookup(
     recipient_address: Annotated[str, Field(min_length=1, description="Recipient wallet address")],
-    amount: Annotated[str, Field(default="0", description="Reference amount for policy evaluation")] = "0",
-    wallet_id: Annotated[str | None, Field(default=None, description="Wallet ID for wallet-specific policy")] = None,
-    network: Annotated[str | None, Field(default=None, description="Network override")]=None,
+    amount: Annotated[
+        str, Field(default="0", description="Reference amount for policy evaluation")
+    ] = "0",
+    wallet_id: Annotated[
+        str | None, Field(default=None, description="Wallet ID for wallet-specific policy")
+    ] = None,
+    network: Annotated[str | None, Field(default=None, description="Network override")] = None,
 ) -> dict[str, Any]:
     """Run ERC-8004 Trust Gate evaluation."""
     try:
