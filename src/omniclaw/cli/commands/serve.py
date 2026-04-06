@@ -4,6 +4,7 @@ import base64
 import json
 import os
 import subprocess
+from urllib.parse import urlencode
 
 import typer
 
@@ -105,11 +106,29 @@ def serve(
                 env["OMNICLAW_PAYER_ADDRESS"] = verify_data.get("sender") or "unknown"
                 env["OMNICLAW_AMOUNT_USD"] = str(price)
                 env["OMNICLAW_TX_HASH"] = verify_data.get("transaction") or ""
+                env["OMNICLAW_REQUEST_METHOD"] = request.method
+                env["OMNICLAW_REQUEST_PATH"] = request.url.path
+                env["OMNICLAW_REQUEST_URL"] = str(request.url)
+                env["OMNICLAW_REQUEST_QUERY"] = urlencode(list(request.query_params.multi_items()))
+
+                raw_body = await request.body()
+                env["OMNICLAW_REQUEST_BODY_BASE64"] = base64.b64encode(raw_body).decode()
+                if raw_body:
+                    try:
+                        env["OMNICLAW_REQUEST_BODY_TEXT"] = raw_body.decode("utf-8")
+                    except UnicodeDecodeError:
+                        env["OMNICLAW_REQUEST_BODY_TEXT"] = ""
+                else:
+                    env["OMNICLAW_REQUEST_BODY_TEXT"] = ""
 
                 result = subprocess.run(
                     exec_cmd, shell=True, capture_output=True, text=True, env=env
                 )
-                response = Response(content=result.stdout, media_type="text/plain")
+                media_type = "text/plain"
+                stripped = result.stdout.lstrip()
+                if stripped.startswith("{") or stripped.startswith("["):
+                    media_type = "application/json"
+                response = Response(content=result.stdout, media_type=media_type)
             except Exception as e:
                 response = JSONResponse(
                     status_code=500,
