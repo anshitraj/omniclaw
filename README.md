@@ -186,6 +186,11 @@ export OMNICLAW_CLI_HUMAN=1
 
 Note: `omniclaw` and `omniclaw-cli` point to the same CLI.
 
+## Examples
+
+- `examples/local-economy/README.md` — canonical local buyer/seller flow
+- `examples/business-compute/README.md` — business-facing paid compute and paid PDF seller using OmniClaw directly in a web app
+
 ---
 
 ## For BUYERS (Paying for Services)

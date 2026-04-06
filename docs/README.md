@@ -13,6 +13,11 @@ This directory is split into two parts:
 - `docs/agent-skills.md`
 - `docs/cli-reference.md`
 
+### Examples
+
+- `examples/local-economy/README.md`
+- `examples/business-compute/README.md`
+
 ### Product And Architecture
 
 - `docs/FEATURES.md`
