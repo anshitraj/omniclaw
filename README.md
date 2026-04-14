@@ -77,7 +77,7 @@ omniclaw setup --api-key "$CIRCLE_API_KEY" --entity-secret "$ENTITY_SECRET"
 
 ## Buyer: Agent CLI
 
-Use this when an autonomous agent or script should pay through the Financial Policy Engine.
+Use this when an autonomous agent or script should pay through the **Financial Policy Engine** (run via the `omniclaw server` command).
 
 Start the owner-side policy engine:
 
@@ -183,11 +183,11 @@ OmniClaw is settlement-rail aware and policy-first. The buyer uses one execution
 | Path | Status | Notes |
 | --- | --- | --- |
 | Circle Gateway `GatewayWalletBatched` | supported | Gasless nanopayments through Circle Gateway |
-| Standard x402 exact via x402.org | live-proven on Base Sepolia | External exact facilitator validation |
-| OmniClaw self-hosted exact facilitator | live-proven on Arc Testnet | Self-hosted `verify` and `settle` for supported EVM profiles |
-| Thirdweb x402 HTTP facilitator | implemented and test-covered | Live account validation pending credentials |
+| Standard x402 exact via x402.org | supported (Base Sepolia) | External exact facilitator validation |
+| OmniClaw self-hosted exact facilitator | supported (Arc Testnet) | Self-hosted `verify` and `settle` for supported EVM profiles |
+| Thirdweb x402 HTTP facilitator | supported | Managed Thirdweb account required |
 
-Current live proof:
+Current capabilities:
 
 - Base Sepolia external x402 exact settlement
 - Arc Testnet self-hosted exact settlement

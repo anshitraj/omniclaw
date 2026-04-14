@@ -14,12 +14,12 @@ Supported deployment shapes:
 
 Use this matrix as the canonical operating model:
 
-| Mode | Seller creates `accepts` | Who runs `verify` / `settle` | Live proof status |
+| Mode | Seller creates `accepts` | Who runs `verify` / `settle` | Status |
 | --- | --- | --- | --- |
 | Circle Gateway | OmniClaw seller middleware | Circle Gateway facilitator | already supported in OmniClaw seller flow |
-| External exact via x402.org | seller app or OmniClaw external seller harness | x402.org | live-proven on Base Sepolia |
-| External exact via Thirdweb | Thirdweb `accepts` API or seller using Thirdweb server wallet | Thirdweb | HTTP integration wired and tested in repo; live account validation pending credentials |
-| Self-hosted OmniClaw exact facilitator | seller app or OmniClaw seller harness | OmniClaw exact facilitator | live-proven on Arc Testnet; use for Arc, Base, Ethereum Sepolia, and other supported EVM profiles |
+| External exact via x402.org | seller app or OmniClaw external seller harness | x402.org | supported on Base Sepolia |
+| External exact via Thirdweb | Thirdweb `accepts` API or seller using Thirdweb server wallet | Thirdweb | supported; requires managed Thirdweb account |
+| Self-hosted OmniClaw exact facilitator | seller app or OmniClaw seller harness | OmniClaw exact facilitator | supported on Arc Testnet; use for Arc, Base, Ethereum Sepolia, and other applicable EVM profiles |
 
 The architectural split matters:
 
@@ -262,7 +262,7 @@ Arc is supported as an exact-settlement EVM network profile:
 
 That means an Arc seller can advertise standard x402 `exact` requirements, the buyer can pay through OmniClaw policy controls, and settlement can be viewed on ArcScan.
 
-Arc self-hosted exact is now live-proven in this repo workflow:
+Arc self-hosted exact is fully supported with this standard workflow:
 
 - seller advertises `exact` on `eip155:5042002`
 - OmniClaw buyer selects `x402` with `direct_wallet`
