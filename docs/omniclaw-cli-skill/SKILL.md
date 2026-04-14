@@ -96,7 +96,7 @@ Do not invent or search for them yourself.
 ### For x402 URLs
 
 1. Run `omniclaw-cli inspect-x402 --recipient <url>` before the first live payment to confirm the seller requirements and buyer funding path.
-2. Use `omniclaw-cli pay --recipient <url>`.
+2. Use `omniclaw-cli pay --recipient <url> --idempotency-key <unique-id>`.
 3. Add `--method`, `--body`, and `--header` when the paid endpoint expects a non-GET request.
 4. Add `--output` if the paid response should be saved.
 
