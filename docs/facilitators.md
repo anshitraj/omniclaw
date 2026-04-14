@@ -298,6 +298,14 @@ So the operational requirement for an already configured profile is only:
 
 That is a deployment requirement, not a missing architecture requirement.
 
+For a visual Arc vendor demo, use the Arc marketplace showcase:
+
+```bash
+bash scripts/start_arc_marketplace_showcase.sh
+```
+
+Runbook: [../examples/arc-marketplace-showcase/README.md](../examples/arc-marketplace-showcase/README.md).
+
 ## External Facilitators
 
 External facilitators remain first-class. If a seller advertises an `exact` payment requirement using another facilitator, OmniClaw's buyer flow can still pay through the standard x402 SDK path as long as:

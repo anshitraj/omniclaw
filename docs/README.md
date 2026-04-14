@@ -43,6 +43,7 @@ Use this index to choose the right integration path.
 | [Local Economy](../examples/local-economy/README.md) | Local buyer/seller stack with Docker |
 | [External x402 Facilitator](../examples/external-x402-facilitator/README.md) | x402.org exact settlement on Base Sepolia |
 | [Thirdweb HTTP Facilitator](../examples/thirdweb-http-facilitator/README.md) | Thirdweb HTTP facilitator integration |
+| [Arc Marketplace Showcase](../examples/arc-marketplace-showcase/README.md) | Visual vendor kiosk with Arc Testnet x402 exact settlement |
 
 ## Operator and Production Docs
 

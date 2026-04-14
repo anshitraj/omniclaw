@@ -206,6 +206,7 @@ Current capabilities:
 | [Local Economy](examples/local-economy/README.md) | Local buyer/seller economy with Docker |
 | [External x402 Facilitator](examples/external-x402-facilitator/README.md) | x402.org Base Sepolia validation |
 | [Thirdweb HTTP Facilitator](examples/thirdweb-http-facilitator/README.md) | Thirdweb HTTP API validation |
+| [Arc Marketplace Showcase](examples/arc-marketplace-showcase/README.md) | Visual vendor kiosk with Arc Testnet x402 exact settlement |
 
 ## Documentation
 
