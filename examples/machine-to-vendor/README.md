@@ -35,7 +35,7 @@ async def premium_report(
 
 The buyer treats that URL as a paid resource.
 
-Agent buyer:
+Agent buyer (requires the Financial Policy Engine `omniclaw server` to be running):
 
 ```bash
 export OMNICLAW_SERVER_URL="http://127.0.0.1:8080"

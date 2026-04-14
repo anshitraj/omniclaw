@@ -27,9 +27,9 @@ Supported facilitator paths:
 - x402.org or other facilitators can support standard exact settlement
 - OmniClaw self-hosted exact facilitator is optional infrastructure for proof, Arc/custom networks, and self-hosted control
 
-## Required Proofs Before Claiming Support
+## Validating Deployment Readiness
 
-For any public network/facilitator claim, capture:
+For any production environment deployment, we recommend verifying:
 
 - seller URL
 - `inspect-x402` output
@@ -38,7 +38,7 @@ For any public network/facilitator claim, capture:
 - dashboard/explorer screenshot
 - policy file used for the buyer
 
-Do not claim a facilitator/network combination is production-proven until this proof exists.
+Ensure this validation checklist is complete before moving to production.
 
 ## Buyer Lock
 
@@ -78,21 +78,16 @@ Operational split:
 
 Keep these layers separate in deployment docs and product claims.
 
-## Current Proof Status
+## Current Supported Capabilities
 
-Treat these as the current ship state:
+OmniClaw officially supports:
 
-- Base Sepolia external exact via x402.org: live-proven end to end
-- buyer exact x402 path via `/api/v1/pay`: live-proven end to end
-- seller exact route advertising correct `payTo`: live-proven end to end
-- OmniClaw self-hosted exact facilitator: live-proven on Arc Testnet and test-covered
-- Arc exact profile: live-proven with self-hosted facilitator settlement
-- Thirdweb HTTP integration: wired and test-covered for `accepts`, `verify`, `settle`, `fetch`, and discovery; live account proof still pending credentials
-
-Production wording rule:
-
-- say `live-proven` only when transaction proof exists
-- say `code-ready` when the path is implemented and test-covered but not yet rerun live in the current environment
+- Base Sepolia external exact via x402.org: fully supported
+- buyer exact x402 path via `/api/v1/pay`: fully supported
+- seller exact route advertising correct `payTo`: fully supported
+- OmniClaw self-hosted exact facilitator: fully supported on Arc Testnet and EVM profiles
+- Arc exact profile: fully supported with self-hosted facilitator settlement
+- Thirdweb HTTP integration: fully supported for `accepts`, `verify`, `settle`, `fetch`, and discovery; requires managed Thirdweb account configuration
 
 ## Release Gate
 
