@@ -416,6 +416,7 @@ class OmniClaw:
                 - "ordern": OrderN
                 - "rbx": RBX
                 - "thirdweb": Thirdweb
+                - "omniclaw": OmniClaw self-hosted exact facilitator
 
         Raises:
             NanopaymentNotInitializedError: If nanopayments are disabled and facilitator is Circle.
@@ -479,10 +480,10 @@ class OmniClaw:
         Returns a FastAPI Depends() that gates the route with x402 payment.
 
         Usage:
-            from fastapi import Depends
+            from fastapi import FastAPI
 
             @app.get("/premium")
-            async def premium(payment=Depends(omniclaw.sell("$0.001"))):
+            async def premium(payment=omniclaw.sell("$0.001")):
                 payment_info = omniclaw.current_payment()
                 return {"data": "paid content", "paid_by": payment_info.payer}
 
@@ -497,6 +498,7 @@ class OmniClaw:
                 - "ordern": OrderN
                 - "rbx": RBX
                 - "thirdweb": Thirdweb
+                - "omniclaw": OmniClaw self-hosted exact facilitator
 
         Returns:
             A FastAPI Depends() callable.
@@ -509,8 +511,9 @@ class OmniClaw:
             # Other facilitators (just provide your address)
             client.sell("$0.01", facilitator="coinbase")
             client.sell("$0.01", seller_address="0xYourAddress", facilitator="coinbase")
+            client.sell("$0.01", seller_address="0xYourAddress", facilitator="omniclaw")
         """
-        from fastapi import Depends
+        from fastapi import Depends, Request
 
         def base_dependency_factory():
             return self.gateway(
@@ -520,10 +523,10 @@ class OmniClaw:
 
         price_str = price
 
-        async def wrapper() -> PaymentInfo:
+        async def wrapper(request: Request) -> PaymentInfo:
             gateway_mw = await base_dependency_factory()
             base_dep = gateway_mw.require(price_str)
-            payment_info: PaymentInfo = await base_dep()
+            payment_info: PaymentInfo = await base_dep(request)
             _current_payment_info.set(payment_info)
             return payment_info
 
@@ -1169,6 +1172,7 @@ class OmniClaw:
                     source_network=source_network,
                     destination_chain=kwargs.get("destination_chain"),
                     amount=amount_decimal,
+                    preferred_url_route=kwargs.get("preferred_url_route"),
                 )
                 or PaymentMethod.TRANSFER
             )

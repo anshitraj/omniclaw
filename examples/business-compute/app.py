@@ -25,6 +25,15 @@ SELLER_TOKEN = os.environ.get("SELLER_OMNICLAW_TOKEN", "seller-agent-token")
 BUYER_SERVER_URL = os.environ.get("BUYER_OMNICLAW_SERVER_URL", "http://localhost:9090")
 BUYER_TOKEN = os.environ.get("BUYER_OMNICLAW_TOKEN", "payment-agent-token")
 APP_PORT = int(os.environ.get("BUSINESS_COMPUTE_PORT", "8010"))
+NETWORK_NAME = os.environ.get("BUSINESS_COMPUTE_NETWORK", "ARC-TESTNET")
+EXPLORER_BASE_URL = os.environ.get(
+    "BUSINESS_COMPUTE_EXPLORER_BASE_URL", "https://testnet.arcscan.app"
+)
+ENABLE_LOCAL_BUYER = os.environ.get("BUSINESS_COMPUTE_ENABLE_LOCAL_BUYER", "false").lower() in {
+    "1",
+    "true",
+    "yes",
+}
 PAPERS_DIR = Path(__file__).resolve().parent / "papers"
 DOWNLOAD_SIGNING_SECRET = os.environ.get(
     "BUSINESS_COMPUTE_DOWNLOAD_SECRET", "local-business-compute-demo-secret"
@@ -42,7 +51,11 @@ def default_buyer_base_url() -> str:
     return f"http://{ip}:{APP_PORT}"
 
 
-BUYER_BASE_URL = os.environ.get("BUSINESS_COMPUTE_BUYER_BASE_URL", default_buyer_base_url())
+PUBLIC_BASE_URL = os.environ.get(
+    "BUSINESS_COMPUTE_PUBLIC_BASE_URL",
+    os.environ.get("BUSINESS_COMPUTE_BUYER_BASE_URL", default_buyer_base_url()),
+)
+AGENT_BASE_URL = os.environ.get("BUSINESS_COMPUTE_AGENT_BASE_URL", default_buyer_base_url())
 
 app = FastAPI(title="OmniClaw Business Demo")
 EVENTS: deque[dict[str, Any]] = deque(maxlen=120)
@@ -174,7 +187,7 @@ HTML = """<!doctype html>
 <head>
   <meta charset=\"utf-8\" />
   <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />
-  <title>OmniClaw Business Demo</title>
+  <title>OmniClaw Arc Vendor Demo</title>
   <style>
     :root {
       --bg: #0c1220;
@@ -231,9 +244,9 @@ HTML = """<!doctype html>
 <body>
   <div class=\"wrap\">
     <div class=\"hero\">
-      <div class=\"eyebrow\">Business Seller</div>
-      <h1>Mini AWS + Research Library powered by OmniClaw</h1>
-      <div class=\"sub\">This server is the business surface. It exposes paid compute and paid research-paper products over HTTP, uses OmniClaw directly for seller-side x402 verification and Circle Gateway settlement, and only unlocks the product after payment.</div>
+      <div class=\"eyebrow\">Arc Vendor Flow</div>
+      <h1>Arc vendor services powered by OmniClaw</h1>
+      <div class=\"sub\">This server is the vendor surface. It exposes paid compute and paid research-paper products over HTTP, uses OmniClaw directly for seller-side x402 verification and Circle Gateway settlement, and only unlocks the product after payment. The buyer is expected to be your external Telegram/OpenClaw agent using omniclaw-cli against the buyer policy engine.</div>
     </div>
     <div class=\"meta\" id=\"meta\"></div>
     <div class=\"meta\" id=\"summary\"></div>
@@ -245,7 +258,7 @@ HTML = """<!doctype html>
         </div>
         <div class=\"panel\">
           <h2>Buyer usage</h2>
-          <div class=\"small\">Use the exact paid URL below inside Telegram/OpenClaw. The local test button runs the buyer through OmniClaw directly.</div>
+          <div class=\"small\">Use the exact paid URL below inside Telegram/OpenClaw. This deployed flow assumes your external agent is the real buyer.</div>
           <div style=\"height:10px\"></div>
           <pre id=\"buyerPrompt\"></pre>
         </div>
@@ -261,8 +274,8 @@ HTML = """<!doctype html>
           <pre id=\"settlements\">No settlements yet.</pre>
         </div>
         <div class=\"panel\">
-          <h2>Last buyer result</h2>
-          <pre id=\"result\">No local buyer run yet.</pre>
+          <h2>Buyer integration</h2>
+          <pre id=\"result\">External buyer mode. Use your Telegram/OpenClaw agent with the buyer policy engine details printed by the launcher.</pre>
         </div>
       </div>
     </div>
@@ -276,11 +289,15 @@ function esc(s) { return String(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt
 async function load() {
   const [catalog, summary] = await Promise.all([fetchJSON('/api/catalog'), fetchJSON('/api/summary')]);
   window.__products = catalog.products;
+  window.__enableLocalBuyer = Boolean(catalog.enable_local_buyer);
   document.getElementById('meta').innerHTML = `
-    <div class="stat"><div class="k">Seller backend</div><div class="v">${esc(catalog.seller_server)}</div></div>
-    <div class="stat"><div class="k">Buyer gateway</div><div class="v">${esc(catalog.buyer_server)}</div></div>
-    <div class="stat"><div class="k">Buyer pay base</div><div class="v">${esc(catalog.buyer_base_url)}</div></div>
-    <div class="stat"><div class="k">Browser base</div><div class="v">${esc(catalog.public_base_url)}</div></div>`;
+    <div class="stat"><div class="k">Network</div><div class="v">${esc(catalog.network)}</div></div>
+    <div class="stat"><div class="k">Seller policy engine</div><div class="v">${esc(catalog.seller_server)}</div></div>
+    <div class="stat"><div class="k">Buyer policy engine</div><div class="v">${esc(catalog.buyer_server)}</div></div>
+    <div class="stat"><div class="k">Buyer-facing base</div><div class="v">${esc(catalog.buyer_base_url)}</div></div>
+    <div class="stat"><div class="k">Buyer execution base</div><div class="v">${esc(catalog.agent_base_url)}</div></div>
+    <div class="stat"><div class="k">Explorer</div><div class="v">${esc(catalog.explorer_base_url)}</div></div>
+    <div class="stat"><div class="k">Browser base</div><div class="v">${esc(catalog.browser_base_url)}</div></div>`;
   document.getElementById('summary').innerHTML = `
     <div class="stat"><div class="k">Revenue</div><div class="v">$${esc(summary.revenue_usdc)} USDC</div></div>
     <div class="stat"><div class="k">Deliveries</div><div class="v">${esc(summary.deliveries)}</div></div>
@@ -294,11 +311,13 @@ async function load() {
       <p>${esc(p.description)}</p>
       <div class="badges">${p.badges.map(b => `<span class="badge">${esc(b)}</span>`).join('')}</div>
       <div class="url">${esc(p.pay_url)}</div>
-      <div class="small" style="margin-top:8px">Browser endpoint: ${esc(p.browser_url)}</div>
+      <div class="small" style="margin-top:8px">Buyer execution URL: ${esc(p.pay_url)}</div>
+      <div class="small" style="margin-top:4px">Public URL: ${esc(p.public_pay_url)}</div>
+      <div class="small" style="margin-top:4px">Browser endpoint: ${esc(p.browser_url)}</div>
       <div class="actions">
         <button class="secondary" onclick='copyUrl(${i})'>Copy URL</button>
         <button class="secondary" onclick='copyPrompt(${i})'>Copy OpenClaw prompt</button>
-        <button onclick='runLocalBuyer(${i})'>Run local buyer test</button>
+        ${catalog.enable_local_buyer ? `<button onclick='runLocalBuyer(${i})'>Run local buyer test</button>` : ``}
       </div>
     </div>`).join('');
   await refreshEvents();
@@ -310,6 +329,10 @@ function copyPrompt(i) {
   navigator.clipboard.writeText('pay for this url: ' + window.__products[i].pay_url);
 }
 async function runLocalBuyer(i) {
+  if (!window.__enableLocalBuyer) {
+    document.getElementById('result').textContent = 'Local buyer mode disabled for this deployment.';
+    return;
+  }
   document.getElementById('result').textContent = 'Running local buyer payment...';
   const data = await fetchJSON('/api/demo/pay', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(window.__products[i])});
   document.getElementById('result').textContent = JSON.stringify(data, null, 2);
@@ -376,6 +399,25 @@ def persist_state() -> None:
     if REDIS_CLIENT is None:
         return
     REDIS_CLIENT.set(REDIS_STATE_KEY, json.dumps(serialize_state()))
+
+
+def reset_state() -> None:
+    EVENTS.clear()
+    RECENT_SETTLEMENTS.clear()
+    SESSION_STORE.clear()
+    METRICS.clear()
+    METRICS.update(
+        {
+            "revenue_usdc": 0.0,
+            "deliveries": 0,
+            "compute_runs": 0,
+            "paper_unlocks": 0,
+            "downloads": 0,
+            "sessions_created": 0,
+        }
+    )
+    if REDIS_CLIENT is not None:
+        REDIS_CLIENT.delete(REDIS_STATE_KEY)
 
 
 def log_event(stage: str, message: str, level: str = "info") -> None:
@@ -711,42 +753,52 @@ async def catalog(request: Request) -> dict[str, Any]:
     for product in COMPUTE_PRODUCTS:
         query = urlencode({"job": product.job, "size": product.size})
         browser_url = f"{base_url}/compute?{query}"
-        pay_url = f"{BUYER_BASE_URL}/compute?{query}"
+        pay_url = f"{AGENT_BASE_URL}/compute?{query}"
+        public_pay_url = f"{PUBLIC_BASE_URL}/compute?{query}"
         products.append(
             {
                 **asdict(product),
                 "browser_url": browser_url,
                 "pay_url": pay_url,
+                "public_pay_url": public_pay_url,
                 "badges": ["compute", f"job={product.job}", f"size={product.size}"],
             }
         )
     for session in SESSION_PRODUCTS:
         browser_url = f"{base_url}/compute/session?tier={session.tier}"
-        pay_url = f"{BUYER_BASE_URL}/compute/session?tier={session.tier}"
+        pay_url = f"{AGENT_BASE_URL}/compute/session?tier={session.tier}"
+        public_pay_url = f"{PUBLIC_BASE_URL}/compute/session?tier={session.tier}"
         products.append(
             {
                 **asdict(session),
                 "browser_url": browser_url,
                 "pay_url": pay_url,
+                "public_pay_url": public_pay_url,
                 "badges": ["session", session.tier, f"credits={session.credits}"],
             }
         )
     for paper in PAPER_PRODUCTS:
         browser_url = f"{base_url}/papers/{paper.slug}"
-        pay_url = f"{BUYER_BASE_URL}/papers/{paper.slug}"
+        pay_url = f"{AGENT_BASE_URL}/papers/{paper.slug}"
+        public_pay_url = f"{PUBLIC_BASE_URL}/papers/{paper.slug}"
         products.append(
             {
                 **asdict(paper),
                 "browser_url": browser_url,
                 "pay_url": pay_url,
+                "public_pay_url": public_pay_url,
                 "badges": ["paper", "pdf", paper.title],
             }
         )
     return {
+        "network": NETWORK_NAME,
+        "explorer_base_url": EXPLORER_BASE_URL,
         "seller_server": SELLER_SERVER_URL,
         "buyer_server": BUYER_SERVER_URL,
-        "public_base_url": base_url,
-        "buyer_base_url": BUYER_BASE_URL,
+        "buyer_base_url": PUBLIC_BASE_URL,
+        "agent_base_url": AGENT_BASE_URL,
+        "browser_base_url": base_url,
+        "enable_local_buyer": ENABLE_LOCAL_BUYER,
         "products": products,
     }
 
@@ -761,8 +813,20 @@ async def summary() -> dict[str, Any]:
     return build_summary()
 
 
+@app.post("/api/admin/reset")
+async def admin_reset() -> dict[str, Any]:
+    reset_state()
+    log_event("boot", "Business seller reset. Waiting for buyer traffic.")
+    return {"ok": True, "status": "reset"}
+
+
 @app.post("/api/demo/pay")
 async def demo_pay(payload: dict[str, Any]) -> JSONResponse:
+    if not ENABLE_LOCAL_BUYER:
+        return JSONResponse(
+            status_code=409,
+            content={"success": False, "status": "disabled", "detail": "Local buyer mode disabled"},
+        )
     url = payload["pay_url"]
     log_event("buyer", f"Buyer initiated payment for {url}")
     resp = await buyer_post("/api/v1/x402/pay", {"url": url, "method": "GET"})
@@ -849,8 +913,8 @@ async def compute_session(request: Request) -> JSONResponse:
             "session_id": session["session_id"],
             "credits_total": product.credits,
             "credits_remaining": product.credits,
-            "submit_url": f"{BUYER_BASE_URL}/compute/jobs/{session['session_id']}?job=prime-count&size=5000",
-            "status_url": f"{BUYER_BASE_URL}/compute/sessions/{session['session_id']}",
+            "submit_url": f"{PUBLIC_BASE_URL}/compute/jobs/{session['session_id']}?job=prime-count&size=5000",
+            "status_url": f"{PUBLIC_BASE_URL}/compute/sessions/{session['session_id']}",
             "paid_by": verified.get("sender") or "unknown",
             "amount_usdc": product.price_usdc,
             "settlement_tx": verified.get("transaction") or "",
@@ -884,7 +948,7 @@ async def paper(slug: str, request: Request) -> JSONResponse:
     if isinstance(verified, JSONResponse):
         return verified
     download_token = sign_download_token(paper.filename, verified.get("transaction") or "")
-    download_url = f"{BUYER_BASE_URL}/downloads/{paper.filename}?token={download_token}"
+    download_url = f"{PUBLIC_BASE_URL}/downloads/{paper.filename}?token={download_token}"
     result = {
         "service": "research-library",
         "product": paper.title,

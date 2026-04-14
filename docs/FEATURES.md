@@ -49,10 +49,40 @@ The router in [payment/router.py](../src/omniclaw/payment/router.py) chooses an 
 
 Current routing:
 
-- URL -> `NanopaymentProtocolAdapter` (Gateway x402), with fallback to `X402Adapter` if needed
+- URL -> inspect seller requirements, then choose `NanopaymentProtocolAdapter` for `GatewayWalletBatched` only when the buyer is Gateway-ready; otherwise use `X402Adapter` for standard `exact` x402 when the seller advertises it
 - address + amount below micro-threshold -> `NanopaymentProtocolAdapter` (Gateway)
 - address -> `TransferAdapter`
 - `destination_chain` set -> `GatewayAdapter`
+
+### Exact Facilitator Layer
+
+OmniClaw is facilitator-agnostic. It can pay seller endpoints backed by external x402 facilitators, Circle Gateway, or an optional self-hosted OmniClaw exact facilitator.
+
+The self-hosted exact facilitator layer exists for standard x402 settlement when teams need local proof, custom network control, or a fallback while validating an external provider.
+
+Current exact-settlement profiles include:
+
+- Base Sepolia
+- Ethereum Sepolia
+- Base mainnet
+- Ethereum mainnet
+- Arc Testnet
+
+Arc Testnet uses CAIP-2 `eip155:5042002` and the official USDC ERC-20 interface `0x3600000000000000000000000000000000000000`.
+
+The facilitator layer is intentionally separate from the Financial Policy Engine. The policy engine decides whether an agent is allowed to pay. The facilitator verifies and settles a valid x402 payload on the selected network.
+
+Supported deployment modes:
+
+- managed external x402 facilitator, including Thirdweb-backed seller endpoints
+- Circle Gateway `GatewayWalletBatched` for gasless nanopayment settlement
+- self-hosted OmniClaw exact facilitator, started with `omniclaw facilitator exact`
+
+Thirdweb is a priority external integration path because it provides broad EVM facilitator coverage and gas-sponsored settlement. OmniClaw adds buyer-side policy, route selection, SDK/CLI execution surfaces, and operator visibility.
+
+OmniClaw added the self-hosted exact facilitator so teams can support networks and proof environments before they are available through their selected hosted facilitator. This is how Arc Testnet is handled: it remains standard x402 `exact` settlement, with OmniClaw providing the network profile, asset metadata, RPC, and facilitator runtime.
+
+See [facilitators.md](facilitators.md) for deployment details.
 
 ### Guards
 
@@ -148,7 +178,7 @@ The on-chain settlement is batched — multiple nanopayments settle in a single 
 #### Buyer vs Seller
 
 - **Buyer**: Uses `NanopaymentAdapter` and `NanopaymentClient` to create and send payments via `client.pay()`
-- **Seller**: Uses `GatewayMiddleware` and `@omniclaw.sell()` to protect FastAPI endpoints
+- **Seller**: Uses `GatewayMiddleware` and `client.sell()` to protect FastAPI endpoints
 
 #### Key Management
 
@@ -194,7 +224,7 @@ Core environment variables:
 
 ```env
 CIRCLE_API_KEY=...
-OMNICLAW_NETWORK=ARC-TESTNET
+OMNICLAW_NETWORK=ETH-SEPOLIA
 ```
 
 Optional:
@@ -213,6 +243,8 @@ OMNICLAW_WHITELISTED_RECIPIENTS=0xabc,0xdef
 OMNICLAW_CONFIRM_ALWAYS=false
 OMNICLAW_CONFIRM_THRESHOLD=500.00
 ```
+
+Use the network that matches your target environment. Public examples in this repo mainly use `ETH-SEPOLIA` or `BASE-SEPOLIA`, while other supported networks can still be selected explicitly.
 
 ## Execution Sequence
 

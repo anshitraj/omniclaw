@@ -5,7 +5,7 @@ This file is a historical design note for OmniClaw's trust-layer direction. It i
 Use these docs for the current product surface instead:
 
 - [README](../README.md)
-- [Financial Policy Engine Usage Guide](SDK_USAGE_GUIDE.md)
+- [Developer Guide (SDK)](developer-guide.md)
 - [API Reference](API_REFERENCE.md)
 - [Architecture and Features](FEATURES.md)
 

@@ -416,11 +416,11 @@ async def test_thirdweb_urls():
     from omniclaw.seller import create_facilitator
 
     f_testnet = create_facilitator(provider="thirdweb", api_key=api_key, environment="testnet")
-    assert f_testnet.base_url == "https://gateway.thirdweb-test.com"
+    assert f_testnet.base_url == "https://api.thirdweb.com"
     await f_testnet.close()
 
     f_mainnet = create_facilitator(provider="thirdweb", api_key=api_key, environment="mainnet")
-    assert f_mainnet.base_url == "https://gateway.thirdweb.com"
+    assert f_mainnet.base_url == "https://api.thirdweb.com"
     await f_mainnet.close()
 
     print("\nThirdweb URLs verified successfully")

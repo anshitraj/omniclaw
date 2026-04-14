@@ -15,6 +15,7 @@ from omniclaw import (
     PaymentStatus,
     PaymentIntentStatus,
     quick_setup,
+    validate_entity_secret,
 )
 ```
 
@@ -24,7 +25,7 @@ Required:
 
 ```env
 CIRCLE_API_KEY=...
-OMNICLAW_NETWORK=ETH-SEPOLIA  # or ARC-TESTNET
+OMNICLAW_NETWORK=ETH-SEPOLIA
 # Direct-key mode (recommended for agents / nanopayments)
 OMNICLAW_PRIVATE_KEY=0x...
 ```
@@ -56,17 +57,29 @@ OMNICLAW_CONFIRM_THRESHOLD=500.00
 
 Defined in [onboarding.py](../src/omniclaw/onboarding.py).
 
-### `quick_setup(api_key, env_path=".env", network="ARC-TESTNET")`
+### `quick_setup(api_key, env_path=".env", network="ARC-TESTNET", entity_secret=None)`
 
-One-time onboarding helper that generates and registers an entity secret and writes an env file (optional).
+One-time onboarding helper that writes a local env file and syncs OmniClaw's managed credential store.
+
+If `entity_secret` is provided, OmniClaw treats it as the existing Circle Entity Secret for that API key and does not try to register a replacement. Circle only allows one active Entity Secret per account/API key.
+
+If `entity_secret` is omitted, OmniClaw generates and registers a new Entity Secret, then saves the recovery file in the secure config directory.
+
+The helper currently defaults to `ARC-TESTNET`, so pass an explicit network if you want the generated env file to target `ETH-SEPOLIA`, `BASE-SEPOLIA`, or another supported network.
+
+Public examples in the docs usually show `ETH-SEPOLIA` or `BASE-SEPOLIA`, but the SDK still supports other configured networks such as `ARC-TESTNET` when selected explicitly.
 
 ### `generate_entity_secret()` (optional)
 
 Returns a 64-character hex entity secret (manual setup only).
 
+### `validate_entity_secret(entity_secret)`
+
+Validates that an existing Circle Entity Secret is a 64-character hex value before it is written to env or managed config.
+
 ### `register_entity_secret(api_key, entity_secret, recovery_dir=None)` (optional)
 
-Registers an entity secret with Circle and downloads the recovery file (manual setup only).
+Registers a new entity secret with Circle and downloads the recovery file (manual setup only). Do not call this for an API key/account that already has an Entity Secret; set `ENTITY_SECRET` directly instead.
 
 ### `create_env_file(api_key, entity_secret, env_path=".env", network="ARC-TESTNET", overwrite=False)` (optional)
 
@@ -167,6 +180,27 @@ await client.pay(
 )
 ```
 
+For x402 URL payments, pass the HTTP request context through `kwargs`:
+
+```python
+await client.pay(
+    wallet_id=wallet.id,
+    recipient="https://seller.example.com/premium",
+    amount="0.25",
+    method="POST",
+    request_body='{"job":"prime-count","size":70000}',
+    request_headers={"x-request-id": "job-123"},
+)
+```
+
+Buyer routing is requirement-driven:
+
+- seller advertises `GatewayWalletBatched` and the buyer is Gateway-ready -> OmniClaw can use the Gateway nanopayment path
+- seller advertises standard x402 `exact` -> OmniClaw uses the upstream x402 SDK path
+- seller advertises both and the buyer is not Gateway-ready -> OmniClaw uses `exact`
+
+When the seller is exact-only, OmniClaw routes directly to `exact` instead of attempting Gateway first.
+
 ```python
 await client.simulate(
     wallet_id,
@@ -234,8 +268,8 @@ Nanopayments use EIP-3009 for gas-free USDC transfers on Circle Gateway. They wo
 # Get the GatewayMiddleware for protecting endpoints
 await client.gateway()  # -> GatewayMiddleware
 
-# Decorator factory for marking paid FastAPI routes
-client.sell(price: str)  # -> Depends() for FastAPI
+# Dependency factory for marking paid FastAPI routes
+client.sell(price: str)  # -> FastAPI Depends() object
 
 # Get current payment info inside a @sell() decorated route
 client.current_payment()  # -> PaymentInfo(payer, amount, network, transaction)
@@ -244,10 +278,8 @@ client.current_payment()  # -> PaymentInfo(payer, amount, network, transaction)
 Example (FastAPI seller):
 
 ```python
-from fastapi import Depends
-
 @app.get("/premium")
-async def premium(payment=Depends(omniclaw.sell("$0.001"))):
+async def premium(payment=omniclaw.sell("$0.001")):
     payment_info = omniclaw.current_payment()
     return {"data": "paid content", "paid_by": payment_info.payer}
 ```

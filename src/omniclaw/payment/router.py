@@ -46,6 +46,14 @@ class PaymentRouter:
     def get_adapters(self) -> list[ProtocolAdapter]:
         return list(self._adapters)
 
+    @staticmethod
+    def _matches_preferred_route(adapter: ProtocolAdapter, preferred_route: Any) -> bool:
+        if not preferred_route:
+            return True
+        adapter_method = getattr(adapter, "method", None)
+        adapter_value = adapter_method.value if hasattr(adapter_method, "value") else adapter_method
+        return str(adapter_value) == str(preferred_route)
+
     def detect_method(
         self,
         recipient: str,
@@ -54,6 +62,8 @@ class PaymentRouter:
         **kwargs: Any,
     ) -> PaymentMethod | None:
         for adapter in self._adapters:
+            if not self._matches_preferred_route(adapter, kwargs.get("preferred_url_route")):
+                continue
             if adapter.supports(
                 recipient,
                 source_network=source_network,
@@ -71,6 +81,8 @@ class PaymentRouter:
         **kwargs: Any,
     ) -> ProtocolAdapter | None:
         for adapter in self._adapters:
+            if not self._matches_preferred_route(adapter, kwargs.get("preferred_url_route")):
+                continue
             if adapter.supports(
                 recipient,
                 source_network=source_network,
@@ -90,7 +102,8 @@ class PaymentRouter:
         return [
             adapter
             for adapter in self._adapters
-            if adapter.supports(
+            if self._matches_preferred_route(adapter, kwargs.get("preferred_url_route"))
+            and adapter.supports(
                 recipient,
                 source_network=source_network,
                 destination_chain=destination_chain,

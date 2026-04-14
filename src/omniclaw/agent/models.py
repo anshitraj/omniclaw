@@ -11,13 +11,18 @@ class PayRequest(BaseModel):
     """Payment request."""
 
     recipient: str = Field(..., description="Payment recipient (address or URL)")
-    amount: str = Field(..., description="Amount in USDC")
+    amount: str | None = Field(None, description="Amount in USDC")
     purpose: str | None = Field(None, description="Payment purpose")
     idempotency_key: str | None = Field(None, description="Idempotency key for deduplication")
     destination_chain: str | None = Field(None, description="Target network for cross-chain")
     fee_level: str | None = Field(None, description="Gas fee level (LOW, MEDIUM, HIGH)")
     check_trust: bool = Field(False, description="Run ERC-8004 Trust Gate check")
     skip_guards: bool = Field(False, description="Skip policy guards (OWNER ONLY)")
+    method: str = Field("GET", description="HTTP method for x402 URL payments")
+    body: str | None = Field(None, description="Request body for x402 URL payments")
+    headers: dict[str, str] | None = Field(
+        None, description="Request headers for x402 URL payments"
+    )
     metadata: dict[str, Any] | None = Field(None, description="Additional context")
 
 
@@ -171,15 +176,34 @@ class HealthResponse(BaseModel):
     version: str = "1.0.0"
 
 
-class X402PayRequest(BaseModel):
-    """X402 Payment request."""
+class X402InspectRequest(BaseModel):
+    """X402 inspection request."""
 
     url: str = Field(..., description="x402 Service URL")
-    amount: str | None = Field(None, description="Payment amount in USDC (default: 0.01)")
+    amount: str | None = Field(None, description="Optional max payment amount in USDC")
     method: str = Field("GET", description="HTTP method")
     body: str | None = Field(None, description="Request body")
     headers: dict[str, str] | None = Field(None, description="Request headers")
-    idempotency_key: str | None = Field(None, description="Idempotency key")
+
+
+class X402InspectResponse(BaseModel):
+    """X402 inspection response."""
+
+    url: str
+    requires_payment: bool
+    buyer_ready: bool
+    reason: str | None = None
+    router_detected_route: str | None = None
+    selected_route: str | None = None
+    payment_source: str | None = None
+    buyer_address: str | None = None
+    gateway_available_balance: str | None = None
+    selected_scheme: str | None = None
+    selected_network: str | None = None
+    selected_amount_atomic: str | None = None
+    selected_amount_usdc: str | None = None
+    selected_pay_to: str | None = None
+    seller_accepts: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class X402VerifyRequest(BaseModel):

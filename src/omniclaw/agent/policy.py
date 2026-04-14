@@ -15,6 +15,7 @@ from typing import Any
 
 from omniclaw.agent.policy_schema import RecipientMode, validate_policy
 from omniclaw.core.logging import get_logger
+from omniclaw.core.types import normalize_network
 
 logger = get_logger(__name__)
 
@@ -576,6 +577,9 @@ class WalletManager:
 
         changed = False
         results: dict[str, str] = {}
+        target_network = normalize_network(
+            getattr(getattr(self._client, "_config", None), "network", None)
+        )
 
         # PHASE 2: Ensure each alias has a Circle wallet id + address
         async def init_alias(alias: str) -> tuple[str, str | None, str | None]:
@@ -591,9 +595,22 @@ class WalletManager:
             if wallet_id:
                 try:
                     wallet = await self._client.get_wallet(wallet_id)
-                    if wallet and wallet.address and wallet.address != wallet_address:
-                        wallet_address = wallet.address
-                    return alias, wallet_id, wallet_address
+                    wallet_network = normalize_network(getattr(wallet, "blockchain", None))
+                    if target_network and wallet_network and wallet_network != target_network:
+                        self._logger.warning(
+                            "Wallet '%s' for alias '%s' is on %s but current network is %s. "
+                            "Creating a new wallet for the target network.",
+                            wallet_id,
+                            alias,
+                            wallet_network.value,
+                            target_network.value,
+                        )
+                        wallet_id = None
+                        wallet_address = None
+                    else:
+                        if wallet and wallet.address and wallet.address != wallet_address:
+                            wallet_address = wallet.address
+                        return alias, wallet_id, wallet_address
                 except Exception:
                     # Fall through to create a new wallet
                     pass

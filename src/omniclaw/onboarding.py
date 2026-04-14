@@ -10,6 +10,7 @@ Handles one-time Circle Developer-Controlled Wallets setup:
 Usage:
     >>> from omniclaw.onboarding import quick_setup
     >>> quick_setup("YOUR_CIRCLE_API_KEY")
+    >>> quick_setup("YOUR_CIRCLE_API_KEY", entity_secret="YOUR_EXISTING_ENTITY_SECRET")
 """
 
 from __future__ import annotations
@@ -282,6 +283,26 @@ def generate_entity_secret() -> str:
     return secrets.token_hex(32)
 
 
+def validate_entity_secret(entity_secret: str) -> str:
+    """
+    Validate and normalize a Circle Entity Secret.
+
+    Circle accounts/API keys can only have one active Entity Secret registered.
+    If a user already has that secret, OmniClaw should use it directly instead
+    of generating and trying to register a replacement.
+    """
+    normalized = entity_secret.strip()
+    if len(normalized) != 64:
+        raise SetupError(f"Entity Secret must be 64 hex characters, got {len(normalized)}")
+
+    try:
+        int(normalized, 16)
+    except ValueError:
+        raise SetupError("Entity Secret must be valid hexadecimal") from None
+
+    return normalized
+
+
 def register_entity_secret(
     api_key: str,
     entity_secret: str,
@@ -306,14 +327,7 @@ def register_entity_secret(
             "Circle SDK not installed. Run: pip install circle-developer-controlled-wallets"
         )
 
-    # Validate entity secret format
-    if len(entity_secret) != 64:
-        raise SetupError(f"Entity Secret must be 64 hex characters, got {len(entity_secret)}")
-
-    try:
-        int(entity_secret, 16)
-    except ValueError:
-        raise SetupError("Entity Secret must be valid hexadecimal") from None
+    entity_secret = validate_entity_secret(entity_secret)
 
     # Default to secure config directory
     # Default to secure config directory
@@ -450,6 +464,7 @@ def create_env_file(
         SetupError: If file exists and overwrite=False
     """
     env_path = Path(env_path)
+    entity_secret = validate_entity_secret(entity_secret)
 
     if env_path.exists() and not overwrite:
         raise SetupError(f"{env_path} already exists. Use overwrite=True to replace.")
@@ -471,24 +486,31 @@ def quick_setup(
     api_key: str,
     env_path: str | Path = ".env",
     network: str = "ARC-TESTNET",
+    entity_secret: str | None = None,
 ) -> dict[str, Any]:
     """
     Complete SDK setup in one call.
 
-    Creates:
-    - .env file with CIRCLE_API_KEY and ENTITY_SECRET (in current directory)
-    - Recovery file in secure config directory (~/.config/omniclaw/)
+    If `entity_secret` is provided, OmniClaw assumes it is the existing Circle
+    Entity Secret for this API key and writes it directly. Circle only allows one
+    Entity Secret per account/API key, so provided secrets are not re-registered.
+
+    If `entity_secret` is omitted, OmniClaw generates a new Entity Secret,
+    registers it with Circle, and saves the recovery file in the secure config
+    directory.
 
     Args:
         api_key: Your Circle API key
         env_path: Path for .env file (default: ".env" in current directory)
         network: Target network (default: "ARC-TESTNET")
+        entity_secret: Existing 64-character Circle Entity Secret, if already created
 
     Returns:
         Dict with entity_secret, env_path, recovery_dir
 
     Example:
         >>> quick_setup("sk_test_...")
+        >>> quick_setup("sk_test_...", entity_secret="a" * 64)
     """
     env_path = Path(env_path).resolve()
     recovery_dir = get_config_dir()  # Secure platform-specific location
@@ -496,21 +518,28 @@ def quick_setup(
     print("OmniClaw Setup")
     print("-" * 40)
 
-    # Step 1: Generate Entity Secret
-    entity_secret = generate_entity_secret()
-    print("[OK] Generated Entity Secret")
+    recovery_file: Path | None = None
+    used_existing_entity_secret = bool(entity_secret)
+    if entity_secret:
+        entity_secret = validate_entity_secret(entity_secret)
+        print("[OK] Using existing Circle Entity Secret")
+    else:
+        # Step 1: Generate Entity Secret
+        entity_secret = generate_entity_secret()
+        print("[OK] Generated Entity Secret")
 
-    # Step 2: Register with Circle (saves recovery file to config dir)
-    try:
-        register_entity_secret(
-            api_key=api_key,
-            entity_secret=entity_secret,
-            recovery_dir=recovery_dir,
-        )
-        print("[OK] Registered with Circle")
-    except SetupError as e:
-        print(f"[FAILED] Registration failed:\n{e}")
-        raise
+        # Step 2: Register with Circle (saves recovery file to config dir)
+        try:
+            register_entity_secret(
+                api_key=api_key,
+                entity_secret=entity_secret,
+                recovery_dir=recovery_dir,
+            )
+            print("[OK] Registered with Circle")
+        except SetupError as e:
+            print(f"[FAILED] Registration failed:\n{e}")
+            raise
+        recovery_file = find_recovery_file()
 
     # Step 3: Create .env file in project directory
     env_content = f"""# OmniClaw Configuration
@@ -521,7 +550,8 @@ OMNICLAW_NETWORK={network}
 
     env_path.write_text(env_content)
     os.chmod(env_path, 0o600)
-    recovery_file = find_recovery_file()
+    if recovery_file is None:
+        recovery_file = find_recovery_file()
     try:
         store_managed_credentials(
             api_key,
@@ -536,10 +566,15 @@ OMNICLAW_NETWORK={network}
     # Summary
     print("-" * 40)
     print(f"Credentials saved to: {env_path}")
-    print(f"Recovery file saved to: {recovery_dir}")
+    if recovery_file:
+        print(f"Recovery file found at: {recovery_file}")
+    elif used_existing_entity_secret:
+        print("Recovery file: not found locally for the provided existing Entity Secret")
+    else:
+        print(f"Recovery file saved to: {recovery_dir}")
     print()
-    print("IMPORTANT: Keep the recovery file safe. You will need it if you")
-    print("lose your entity secret and need to reset it.")
+    print("IMPORTANT: Keep your Entity Secret and Circle recovery file safe.")
+    print("Circle allows one active Entity Secret per account/API key.")
     print()
     print("Ready to use:")
     print("  from omniclaw import OmniClaw")
@@ -557,20 +592,31 @@ def auto_setup_entity_secret(
     logger: Logger | None = None,
 ) -> str:
     """
-    Silently auto-generate and register entity secret.
+    Resolve or silently auto-generate/register an entity secret.
 
-    Called automatically by OmniClaw client when ENTITY_SECRET is missing.
-    Saves recovery file to secure config directory (~/.config/omniclaw/).
-    Also appends ENTITY_SECRET to .env file if it exists.
+    Called automatically by OmniClaw client when ENTITY_SECRET is missing. The
+    function first checks env and OmniClaw's managed config. It only generates
+    and registers a new Circle Entity Secret when no existing secret is found.
+
+    Circle allows one active Entity Secret per account/API key. If the Circle
+    account already has one but it is not available locally, set ENTITY_SECRET
+    directly instead of forcing a new registration.
 
     Args:
         api_key: Circle API key
         logger: Optional logger for status messages
 
     Returns:
-        Generated entity secret (64 hex chars)
+        Existing or generated entity secret (64 hex chars)
     """
     log = logger or logging.getLogger("omniclaw.onboarding")
+
+    existing_secret = resolve_entity_secret(api_key)
+    if existing_secret:
+        existing_secret = validate_entity_secret(existing_secret)
+        os.environ["ENTITY_SECRET"] = existing_secret
+        log.info("Using existing Circle Entity Secret from environment or managed store.")
+        return existing_secret
 
     entity_secret = generate_entity_secret()
 

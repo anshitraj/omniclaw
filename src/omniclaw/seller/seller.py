@@ -356,7 +356,6 @@ class Seller:
                         "amount": str(amount_atomic),
                         "payTo": self.config.seller_address,
                         "maxTimeoutSeconds": 345600,
-                        "extra": {"name": "USDC", "version": "2"},
                     }
                 )
             elif scheme == PaymentScheme.GATEWAY_BATCHED:

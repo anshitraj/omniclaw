@@ -31,6 +31,7 @@ The 402 response structure (x402 v2):
 from __future__ import annotations
 
 import base64
+import inspect
 import json
 from dataclasses import dataclass
 from typing import Any
@@ -193,6 +194,10 @@ class GatewayMiddleware:
         self._facilitator = facilitator
         self._facilitator_name = facilitator.name if facilitator else "circle"
 
+    def _uses_gateway_batched_scheme(self) -> bool:
+        """Return True when this middleware should advertise Circle's GatewayWalletBatched."""
+        return not self._facilitator or str(self._facilitator_name).lower() == "circle"
+
     # -------------------------------------------------------------------------
     # Supported networks management
     # -------------------------------------------------------------------------
@@ -295,28 +300,31 @@ class GatewayMiddleware:
             return []  # No networks available
 
         accepts = []
+        use_gateway_batched = self._uses_gateway_batched_scheme()
         for kind in kinds:
             verifying_contract = kind.verifying_contract
             usdc_address = kind.usdc_address
 
-            if not verifying_contract or not usdc_address:
+            if not usdc_address:
                 continue
 
-            accepts.append(
-                {
-                    "scheme": "exact",
-                    "network": kind.network,
-                    "asset": usdc_address,
-                    "amount": str(price_atomic),
-                    "maxTimeoutSeconds": MAX_TIMEOUT_SECONDS,
-                    "payTo": self._seller_address,
-                    "extra": {
-                        "name": "GatewayWalletBatched",
-                        "version": "1",
-                        "verifyingContract": verifying_contract,
-                    },
+            accept: dict[str, Any] = {
+                "scheme": "exact",
+                "network": kind.network,
+                "asset": usdc_address,
+                "amount": str(price_atomic),
+                "maxTimeoutSeconds": MAX_TIMEOUT_SECONDS,
+                "payTo": self._seller_address,
+            }
+            if use_gateway_batched:
+                if not verifying_contract:
+                    continue
+                accept["extra"] = {
+                    "name": "GatewayWalletBatched",
+                    "version": "1",
+                    "verifyingContract": verifying_contract,
                 }
-            )
+            accepts.append(accept)
 
         return accepts
 
@@ -327,6 +335,9 @@ class GatewayMiddleware:
     async def _build_402_response(
         self,
         price_usd: str,
+        *,
+        resource_url: str = "",
+        method: str = "GET",
     ) -> dict[str, Any]:
         """
         Build the x402 v2 402 response body.
@@ -335,6 +346,19 @@ class GatewayMiddleware:
             Dict with x402Version and accepts array.
         """
         price_atomic = parse_price(price_usd)
+
+        create_accepts = getattr(self._facilitator, "create_accepts", None)
+        if self._facilitator and inspect.iscoroutinefunction(create_accepts):
+            accepts = await create_accepts(
+                resource_url=resource_url,
+                method=method,
+                price=price_usd,
+                server_wallet_address=self._seller_address,
+            )
+            return {
+                "x402Version": X402_VERSION,
+                "accepts": accepts,
+            }
 
         # Get supported kinds - handle both Circle and other facilitators
         kinds = None
@@ -396,6 +420,9 @@ class GatewayMiddleware:
         self,
         request_headers: dict[str, str],
         price_usd: str,
+        *,
+        resource_url: str = "",
+        method: str = "GET",
     ) -> PaymentInfo:
         """
         Handle payment for a request.
@@ -421,7 +448,11 @@ class GatewayMiddleware:
 
         if not sig_header:
             # Build 402 response
-            body = await self._build_402_response(price_usd)
+            body = await self._build_402_response(
+                price_usd,
+                resource_url=resource_url,
+                method=method,
+            )
             header_value = self._encode_requirements(body)
             raise PaymentRequiredHTTPError(
                 status_code=402,
@@ -439,9 +470,10 @@ class GatewayMiddleware:
                 headers={},
             ) from None
 
-        # Build requirements from the payment payload
-        # We need to match the requirements that the buyer used
+        # Build requirements from the payment payload.
+        # Circle Gateway uses GatewayWalletBatched metadata; external facilitators use standard exact.
         gateway_kind = None
+        facilitator_requirements: dict[str, Any] | None = None
         if payload.payload.authorization:
             auth = payload.payload.authorization
             expected_amount = str(parse_price(price_usd))
@@ -492,51 +524,78 @@ class GatewayMiddleware:
                     headers={},
                 )
 
-            if not verifying_contract or not usdc_address:
+            if not usdc_address:
                 raise PaymentRequiredHTTPError(
                     status_code=502,
                     detail={"error": f"Missing contract addresses for network {payload.network}"},
                     headers={},
                 )
 
-            gateway_kind = PaymentRequirementsKind(
-                scheme="exact",
-                network=payload.network,
-                asset=usdc_address,  # Use actual USDC address from supported kinds
-                amount=auth.value,
-                max_timeout_seconds=MAX_TIMEOUT_SECONDS,
-                pay_to=self._seller_address,
-                extra=PaymentRequirementsExtra(
-                    name="GatewayWalletBatched",
-                    version="1",
-                    verifying_contract=verifying_contract,
-                ),
-            )
+            if self._uses_gateway_batched_scheme():
+                if not verifying_contract:
+                    raise PaymentRequiredHTTPError(
+                        status_code=502,
+                        detail={
+                            "error": f"Missing verifying contract for network {payload.network}"
+                        },
+                        headers={},
+                    )
+                gateway_kind = PaymentRequirementsKind(
+                    scheme="exact",
+                    network=payload.network,
+                    asset=usdc_address,
+                    amount=auth.value,
+                    max_timeout_seconds=MAX_TIMEOUT_SECONDS,
+                    pay_to=self._seller_address,
+                    extra=PaymentRequirementsExtra(
+                        name="GatewayWalletBatched",
+                        version="1",
+                        verifying_contract=verifying_contract,
+                    ),
+                )
+            else:
+                facilitator_requirements = {
+                    "x402Version": X402_VERSION,
+                    "accepts": [
+                        {
+                            "scheme": "exact",
+                            "network": payload.network,
+                            "asset": usdc_address,
+                            "amount": auth.value,
+                            "maxTimeoutSeconds": MAX_TIMEOUT_SECONDS,
+                            "payTo": self._seller_address,
+                        }
+                    ],
+                }
 
-        if gateway_kind is None:
+        if gateway_kind is None and facilitator_requirements is None:
             raise PaymentRequiredHTTPError(
                 status_code=402,
                 detail={"error": "Missing authorization in PAYMENT-SIGNATURE payload"},
                 headers={},
             )
 
-        requirements = PaymentRequirements(
-            x402_version=X402_VERSION,
-            accepts=(gateway_kind,) if gateway_kind else (),
-        )
+        requirements = None
+        if gateway_kind is not None:
+            requirements = PaymentRequirements(
+                x402_version=X402_VERSION,
+                accepts=(gateway_kind,),
+            )
 
         # Settle the payment - use facilitator if provided, otherwise use Circle client
         try:
             if self._facilitator:
-                # Use custom facilitator (Coinbase, OrderN, RBX, Thirdweb)
                 payload_dict = payload.to_dict()
-                req_dict = requirements.to_dict()
+                req_dict = (
+                    facilitator_requirements
+                    if facilitator_requirements is not None
+                    else requirements.to_dict()
+                )
                 settle_resp = await self._facilitator.settle(payload_dict, req_dict)
                 settle_success = settle_resp.success
                 settle_payer = settle_resp.payer
                 settle_tx = settle_resp.transaction
             else:
-                # Use Circle Gateway (default)
                 settle_resp = await self._client.settle(
                     payload=payload,
                     requirements=requirements,
@@ -585,7 +644,12 @@ class GatewayMiddleware:
         async def dependency(request: Request) -> PaymentInfo:
             headers = dict(request.headers)
             try:
-                return await self.handle(headers, price)
+                return await self.handle(
+                    headers,
+                    price,
+                    resource_url=str(request.url),
+                    method=request.method,
+                )
             except PaymentRequiredHTTPError as exc:
                 raise HTTPException(
                     status_code=exc.status_code,

@@ -5,6 +5,7 @@ Tests the main SDK entry point with per-wallet/wallet-set guards.
 """
 
 import os
+import inspect
 import tempfile
 from decimal import Decimal
 from pathlib import Path
@@ -386,6 +387,18 @@ class TestPayIdempotency:
 
         assert len(captured_keys) == 2
         assert captured_keys[0] == captured_keys[1]
+
+
+class TestSellerDependency:
+    def test_sell_returns_fastapi_dependency_that_accepts_request(self, client):
+        dependency = client.sell(
+            "$0.01",
+            seller_address="0x742d35Cc6634C0532925a3b844Bc9e7595f1E123",
+        )
+
+        assert hasattr(dependency, "dependency")
+        signature = inspect.signature(dependency.dependency)
+        assert "request" in signature.parameters
 
 
 class TestSettlementReconciliation:

@@ -238,6 +238,16 @@ class TestGatewayContractConfig:
         )
         assert gw_accept["extra"]["version"] == "1"
 
+    def test_exact_accept_does_not_advertise_gateway_metadata(self):
+        seller = Seller(
+            seller_address="0x742d35Cc6634C0532925a3b844Bc9e7595f1E123",
+            name="Test",
+        )
+        seller.add_endpoint("/test", "$0.001", schemes=[PaymentScheme.EXACT])
+        accept = seller._create_accepts(seller.get_endpoints()["/test"])[0]
+        assert accept["scheme"] == "exact"
+        assert "extra" not in accept
+
 
 class TestSellerSecurityHardening:
     """Regression tests for seller-side anti-tamper and replay protections."""

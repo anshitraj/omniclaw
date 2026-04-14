@@ -27,7 +27,9 @@ Usage:
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from decimal import Decimal
 from typing import Any
+from urllib.parse import urlencode
 
 from omniclaw.seller.facilitator import (
     CircleGatewayFacilitator as CircleImpl,
@@ -146,6 +148,19 @@ class BaseFacilitator(ABC):
         pass
 
 
+def _parse_price_to_atomic(price: str) -> str:
+    value = str(price).strip()
+    if not value:
+        raise ValueError("price is required")
+    if value.startswith("$"):
+        value = value[1:].strip()
+    decimal_value = Decimal(value)
+    scaled = decimal_value * Decimal(1_000_000)
+    if scaled != scaled.to_integral_value():
+        raise ValueError(f"price {price!r} cannot be represented with 6 decimals")
+    return str(int(scaled))
+
+
 # =============================================================================
 # Coinbase Facilitator
 # =============================================================================
@@ -203,6 +218,7 @@ class CoinbaseFacilitator(BaseFacilitator):
             )
             r.raise_for_status()
             data = r.json()
+            data = data.get("result", data) if isinstance(data, dict) else {}
             return VerifyResult(
                 is_valid=data.get("isValid", False),
                 payer=data.get("payer"),
@@ -225,6 +241,7 @@ class CoinbaseFacilitator(BaseFacilitator):
             )
             r.raise_for_status()
             data = r.json()
+            data = data.get("result", data) if isinstance(data, dict) else {}
             return SettleResult(
                 success=data.get("success", False),
                 transaction=data.get("transaction"),
@@ -300,6 +317,7 @@ class OrderNFacilitator(BaseFacilitator):
             )
             r.raise_for_status()
             data = r.json()
+            data = data.get("result", data) if isinstance(data, dict) else {}
             return VerifyResult(
                 is_valid=data.get("isValid", False),
                 payer=data.get("payer"),
@@ -322,6 +340,7 @@ class OrderNFacilitator(BaseFacilitator):
             )
             r.raise_for_status()
             data = r.json()
+            data = data.get("result", data) if isinstance(data, dict) else {}
             return SettleResult(
                 success=data.get("success", False),
                 transaction=data.get("transaction"),
@@ -397,6 +416,7 @@ class RBXFacilitator(BaseFacilitator):
             )
             r.raise_for_status()
             data = r.json()
+            data = data.get("result", data) if isinstance(data, dict) else {}
             return VerifyResult(
                 is_valid=data.get("isValid", False),
                 payer=data.get("payer"),
@@ -419,6 +439,7 @@ class RBXFacilitator(BaseFacilitator):
             )
             r.raise_for_status()
             data = r.json()
+            data = data.get("result", data) if isinstance(data, dict) else {}
             return SettleResult(
                 success=data.get("success", False),
                 transaction=data.get("transaction"),
@@ -451,23 +472,38 @@ class RBXFacilitator(BaseFacilitator):
 
 class ThirdwebFacilitator(BaseFacilitator):
     """
-    Thirdweb x402 Facilitator.
+    Thirdweb x402 Facilitator using the public HTTP API.
 
-    https://thirdweb.com
+    https://portal.thirdweb.com/reference#tag/x402
     """
 
-    THIRDWEB_TESTNET = "https://gateway.thirdweb-test.com"
-    THIRDWEB_MAINNET = "https://gateway.thirdweb.com"
+    THIRDWEB_API = "https://api.thirdweb.com"
 
-    def __init__(self, api_key: str, environment: str = "testnet", timeout: float = 30.0):
+    def __init__(
+        self,
+        api_key: str,
+        environment: str = "testnet",
+        timeout: float = 30.0,
+        server_wallet_address: str | None = None,
+        default_network: str | None = None,
+    ):
+        import os
+
         import httpx
 
         self._api_key = api_key
         self._environment = environment
         self._timeout = timeout
-        self._base_url = (
-            self.THIRDWEB_TESTNET if environment == "testnet" else self.THIRDWEB_MAINNET
-        )
+        self._server_wallet_address = (
+            server_wallet_address or os.environ.get("THIRDWEB_SERVER_WALLET_ADDRESS") or ""
+        ).strip()
+        self._default_network = (
+            default_network
+            or os.environ.get("THIRDWEB_X402_NETWORK")
+            or os.environ.get("OMNICLAW_X402_NETWORK")
+            or "base-sepolia"
+        ).strip()
+        self._base_url = self.THIRDWEB_API
         self._client = httpx.AsyncClient(timeout=timeout)
 
     @property
@@ -482,9 +518,96 @@ class ThirdwebFacilitator(BaseFacilitator):
     def environment(self) -> str:
         return self._environment
 
+    async def create_accepts(
+        self,
+        *,
+        resource_url: str,
+        method: str = "GET",
+        network: str | None = None,
+        price: str,
+        server_wallet_address: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Create x402 accepts through Thirdweb's public HTTP API."""
+        wallet_address = (server_wallet_address or self._server_wallet_address).strip()
+        if not wallet_address:
+            raise ValueError(
+                "THIRDWEB_SERVER_WALLET_ADDRESS is required to create Thirdweb x402 accepts"
+            )
+
+        url = f"{self._base_url}/v1/payments/x402/accepts"
+        headers = {"x-secret-key": self._api_key, "Content-Type": "application/json"}
+        response = await self._client.post(
+            url,
+            json={
+                "resourceUrl": resource_url,
+                "method": method.upper(),
+                "network": network or self._default_network,
+                "price": price,
+                "serverWalletAddress": wallet_address,
+            },
+            headers=headers,
+        )
+        response.raise_for_status()
+        data = response.json()
+        data = data.get("result", data) if isinstance(data, dict) else {}
+        accepts = data.get("accepts", data if isinstance(data, list) else [])
+        if not isinstance(accepts, list):
+            raise RuntimeError("Thirdweb accepts response did not contain an accepts array")
+        return accepts
+
+    async def fetch_with_payment(
+        self,
+        *,
+        url: str,
+        from_address: str,
+        method: str = "GET",
+        chain_id: str | None = None,
+        max_value: str | None = None,
+        asset: str | None = None,
+        headers: dict[str, str] | None = None,
+        body: Any = None,
+    ) -> dict[str, Any]:
+        """Proxy/pay an x402 URL through Thirdweb's public fetch API."""
+        query = {
+            "url": url,
+            "from": from_address,
+            "method": method.upper(),
+        }
+        if chain_id:
+            query["chainId"] = chain_id
+        if max_value:
+            query["maxValue"] = max_value
+        if asset:
+            query["asset"] = asset
+
+        request_headers = {"x-secret-key": self._api_key}
+        if headers:
+            request_headers.update(headers)
+        response = await self._client.post(
+            f"{self._base_url}/v1/payments/x402/fetch?{urlencode(query)}",
+            headers=request_headers,
+            json=body if isinstance(body, dict) else None,
+            content=None if isinstance(body, dict) else body,
+        )
+        response.raise_for_status()
+        data = response.json()
+        return data.get("result", data) if isinstance(data, dict) else {"result": data}
+
+    async def discover_resources(self, **query: Any) -> dict[str, Any]:
+        """Read Thirdweb x402 discovery resources."""
+        params = {key: value for key, value in query.items() if value is not None}
+        suffix = f"?{urlencode(params)}" if params else ""
+        response = await self._client.get(
+            f"{self._base_url}/v1/payments/x402/discovery/resources{suffix}",
+            headers={"x-secret-key": self._api_key, "Accept": "application/json"},
+        )
+        response.raise_for_status()
+        data = response.json()
+        return data.get("result", data) if isinstance(data, dict) else {"result": data}
+
     async def verify(self, payment_payload: dict, payment_requirements: dict) -> VerifyResult:
-        url = f"{self._base_url}/api/v1/x402/verify"
-        headers = {"Authorization": f"Bearer {self._api_key}", "Content-Type": "application/json"}
+        url = f"{self._base_url}/v1/payments/x402/verify"
+        headers = {"x-secret-key": self._api_key, "Content-Type": "application/json"}
         try:
             r = await self._client.post(
                 url,
@@ -496,6 +619,7 @@ class ThirdwebFacilitator(BaseFacilitator):
             )
             r.raise_for_status()
             data = r.json()
+            data = data.get("result", data) if isinstance(data, dict) else {}
             return VerifyResult(
                 is_valid=data.get("isValid", False),
                 payer=data.get("payer"),
@@ -505,19 +629,21 @@ class ThirdwebFacilitator(BaseFacilitator):
             return VerifyResult(is_valid=False, payer=None, invalid_reason=str(e))
 
     async def settle(self, payment_payload: dict, payment_requirements: dict) -> SettleResult:
-        url = f"{self._base_url}/api/v1/x402/settle"
-        headers = {"Authorization": f"Bearer {self._api_key}", "Content-Type": "application/json"}
+        url = f"{self._base_url}/v1/payments/x402/settle"
+        headers = {"x-secret-key": self._api_key, "Content-Type": "application/json"}
         try:
             r = await self._client.post(
                 url,
                 json={
                     "paymentPayload": payment_payload,
                     "paymentRequirements": payment_requirements,
+                    "waitUntil": "confirmed",
                 },
                 headers=headers,
             )
             r.raise_for_status()
             data = r.json()
+            data = data.get("result", data) if isinstance(data, dict) else {}
             return SettleResult(
                 success=data.get("success", False),
                 transaction=data.get("transaction"),
@@ -531,13 +657,174 @@ class ThirdwebFacilitator(BaseFacilitator):
             )
 
     async def get_supported_networks(self) -> list:
-        headers = {"Authorization": f"Bearer {self._api_key}", "Accept": "application/json"}
+        headers = {"x-secret-key": self._api_key, "Accept": "application/json"}
         return await _fetch_supported_networks(
             client=self._client,
             base_url=self._base_url,
             headers=headers,
-            candidate_paths=["/api/v1/x402/supported", "/v1/x402/supported", "/x402/supported"],
+            candidate_paths=[
+                "/v1/payments/x402/supported",
+                "/v1/payments/x402/accepts",
+            ],
         )
+
+    async def close(self):
+        await self._client.aclose()
+
+
+class OmniClawExactFacilitator(BaseFacilitator):
+    """
+    OmniClaw self-hosted exact x402 facilitator.
+
+    Use this for vendor SDK integrations that want to monetize routes with
+    `client.sell(..., facilitator="omniclaw")` while running their own
+    OmniClaw exact facilitator for verify/settle.
+    """
+
+    def __init__(
+        self,
+        api_key: str | None = None,
+        environment: str = "testnet",
+        timeout: float = 30.0,
+        base_url: str | None = None,
+        network_profile: str | None = None,
+        network: str | None = None,
+        asset: str | None = None,
+        name: str = "omniclaw",
+    ):
+        import os
+
+        import httpx
+
+        from omniclaw.facilitator.networks import resolve_exact_settlement_network_profile
+
+        profile = resolve_exact_settlement_network_profile(
+            network_profile
+            or os.environ.get("OMNICLAW_X402_EXACT_NETWORK_PROFILE")
+            or os.environ.get("OMNICLAW_X402_FACILITATOR_NETWORK_PROFILE")
+            or os.environ.get("OMNICLAW_NETWORK")
+            or "BASE-SEPOLIA"
+        )
+        self._environment = environment
+        self._name = name
+        self._base_url = (
+            base_url
+            or os.environ.get("OMNICLAW_X402_SELF_HOSTED_FACILITATOR_URL")
+            or os.environ.get("OMNICLAW_X402_EXACT_FACILITATOR_URL")
+            or "http://127.0.0.1:4022"
+        ).rstrip("/")
+        self._network = network or profile.caip2
+        self._asset = asset or profile.default_asset_address
+        if not self._asset:
+            raise ValueError(f"No exact settlement asset configured for {profile.label}")
+        self._asset_name = profile.default_asset_name
+        self._asset_version = profile.default_asset_version
+        self._client = httpx.AsyncClient(timeout=timeout)
+
+    @property
+    def name(self) -> str:
+        return self._name
+
+    @property
+    def base_url(self) -> str:
+        return self._base_url
+
+    @property
+    def environment(self) -> str:
+        return self._environment
+
+    async def create_accepts(
+        self,
+        *,
+        resource_url: str,
+        method: str = "GET",
+        network: str | None = None,
+        price: str,
+        server_wallet_address: str | None = None,
+    ) -> list[dict[str, Any]]:
+        if not server_wallet_address:
+            raise ValueError("server_wallet_address is required")
+        return [
+            {
+                "scheme": "exact",
+                "network": network or self._network,
+                "asset": self._asset,
+                "amount": _parse_price_to_atomic(price),
+                "payTo": server_wallet_address,
+                "maxTimeoutSeconds": 300,
+                "extra": {
+                    "name": self._asset_name,
+                    "version": self._asset_version,
+                },
+            }
+        ]
+
+    async def verify(self, payment_payload: dict, payment_requirements: dict) -> VerifyResult:
+        try:
+            response = await self._client.post(
+                f"{self._base_url}/verify",
+                json={
+                    "x402Version": 2,
+                    "paymentPayload": payment_payload,
+                    "paymentRequirements": payment_requirements,
+                },
+            )
+            response.raise_for_status()
+            data = response.json()
+            return VerifyResult(
+                is_valid=data.get("isValid", data.get("is_valid", False)),
+                payer=data.get("payer"),
+                invalid_reason=data.get("invalidReason") or data.get("invalid_reason"),
+            )
+        except Exception as exc:
+            return VerifyResult(is_valid=False, payer=None, invalid_reason=str(exc))
+
+    async def settle(self, payment_payload: dict, payment_requirements: dict) -> SettleResult:
+        try:
+            response = await self._client.post(
+                f"{self._base_url}/settle",
+                json={
+                    "x402Version": 2,
+                    "paymentPayload": payment_payload,
+                    "paymentRequirements": payment_requirements,
+                },
+            )
+            response.raise_for_status()
+            data = response.json()
+            return SettleResult(
+                success=data.get("success", False),
+                transaction=data.get("transaction"),
+                network=data.get("network"),
+                error_reason=data.get("errorReason") or data.get("error_reason"),
+                payer=data.get("payer"),
+            )
+        except Exception as exc:
+            return SettleResult(
+                success=False,
+                transaction=None,
+                network=None,
+                error_reason=str(exc),
+                payer=None,
+            )
+
+    async def get_supported_networks(self) -> list[dict[str, Any]]:
+        response = await self._client.get(f"{self._base_url}/supported")
+        response.raise_for_status()
+        data = response.json()
+        if isinstance(data, dict) and isinstance(data.get("kinds"), list):
+            return data["kinds"]
+        if isinstance(data, dict) and isinstance(data.get("supported"), list):
+            return data["supported"]
+        if isinstance(data, list):
+            return data
+        return [
+            {
+                "x402Version": 2,
+                "scheme": "exact",
+                "network": self._network,
+                "extra": {"usdcAddress": self._asset},
+            }
+        ]
 
     async def close(self):
         await self._client.aclose()
@@ -554,6 +841,9 @@ SUPPORTED_FACILITATORS = {
     "ordern": OrderNFacilitator,
     "rbx": RBXFacilitator,
     "thirdweb": ThirdwebFacilitator,
+    "omniclaw": OmniClawExactFacilitator,
+    "selfhosted": OmniClawExactFacilitator,
+    "self-hosted": OmniClawExactFacilitator,
 }
 
 
@@ -566,15 +856,16 @@ def create_facilitator(
     """
     Factory to create a facilitator.
 
-    Supports top 5 facilitators:
+    Supports managed and self-hosted facilitators:
     - circle: Circle Gateway (https://circle.com)
     - coinbase: Coinbase CDP (https://coinbase.com)
     - ordern: OrderN (https://ordern.ai)
     - rbx: RBX (https://rbx.io)
     - thirdweb: Thirdweb (https://thirdweb.com)
+    - omniclaw: OmniClaw self-hosted exact facilitator
 
     Args:
-        provider: Facilitator name ("circle", "coinbase", "ordern", "rbx", "thirdweb")
+        provider: Facilitator name ("circle", "coinbase", "ordern", "rbx", "thirdweb", "omniclaw")
         api_key: API key for the facilitator
         environment: "testnet" or "mainnet"
         **kwargs: Additional options
@@ -584,15 +875,29 @@ def create_facilitator(
     """
     import os
 
+    provider = provider.lower()
+
+    if provider in {"omniclaw", "selfhosted", "self-hosted"}:
+        return OmniClawExactFacilitator(
+            api_key=api_key,
+            environment=environment,
+            name=provider,
+            **kwargs,
+        )
+
     if api_key is not None:
         key = api_key
+    elif provider == "thirdweb":
+        key = (
+            os.environ.get("THIRDWEB_SECRET_KEY")
+            or os.environ.get("FACILITATOR_API_KEY")
+            or os.environ.get("CIRCLE_API_KEY")
+        )
     else:
         key = os.environ.get("FACILITATOR_API_KEY") or os.environ.get("CIRCLE_API_KEY")
 
     if not key:
         raise ValueError("api_key is required")
-
-    provider = provider.lower()
 
     if provider not in SUPPORTED_FACILITATORS:
         raise ValueError(
@@ -614,6 +919,7 @@ __all__ = [
     "OrderNFacilitator",
     "RBXFacilitator",
     "ThirdwebFacilitator",
+    "OmniClawExactFacilitator",
     "VerifyResult",
     "SettleResult",
     "create_facilitator",
