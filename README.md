@@ -1,327 +1,245 @@
 # OmniClaw
 
-**Economic Execution and Control Layer for Agentic Systems** — Policy-controlled payments with Circle Gateway nanopayments (EIP-3009), x402 protocol support, gasless transactions, and per-agent wallet isolation.
+**Policy-controlled payments for AI agents and machine services.**
 
-📦 [PyPI](https://pypi.org/project/omniclaw/) · 🧪 [Tests: 1220 passed](tests/)
+[![CI](https://github.com/omnuron/omniclaw/actions/workflows/ci.yml/badge.svg)](https://github.com/omnuron/omniclaw/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/omniclaw.svg)](https://pypi.org/project/omniclaw/)
+[![Python](https://img.shields.io/pypi/pyversions/omniclaw.svg)](https://pypi.org/project/omniclaw/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
----
+OmniClaw lets software agents pay, earn, and access paid APIs without giving the agent unrestricted wallet authority.
 
-## Why OmniClaw?
+The owner runs a **Financial Policy Engine**. Agents and applications execute through constrained interfaces. Every payment is checked against policy before funds move.
 
-In the Agent Era, software can act economically. But current wallets fail when software, not humans, is the operator:
+## Why It Exists
 
-- **Full key access** = extreme risk (agent can drain the wallet)
-- **Human approval** = kills speed and autonomy
-- **No spending limits** = agent can spend unlimited
+AI agents can browse, reason, call APIs, and run workflows. The hard part is money movement.
 
-Where Stripe helps merchants accept human payments, OmniClaw governs autonomous agents making machine payments — with policy, trust verification, and concurrency safety built in.
+OmniClaw solves the control problem:
 
-**OmniClaw solves this** by separating:
-1. **Financial Policy Engine** (owner runs) - holds private keys, enforces policy
-2. **Zero-Trust Execution Layer** (agent uses) - constrained CLI that only does what policy allows
+- agents can pay for services without receiving raw wallet control
+- sellers can monetize APIs through x402-compatible payment gates
+- operators can enforce budgets, recipient rules, confirmations, and route selection
+- payments can settle through Circle Gateway, standard x402 exact settlement, or a self-hosted exact facilitator
 
-The agent **never touches the private key**. It only talks to the CLI. The owner decides what the agent can do via policy.json.
+## Core Surfaces
 
----
+| Surface | Used By | Purpose |
+| --- | --- | --- |
+| Financial Policy Engine | owner / operator | Enforces policy, signs allowed actions, exposes the control API |
+| `omniclaw-cli` | agents / automation | Executes buyer payments through the policy engine without direct key access |
+| Python SDK | developers / vendors | Embeds buyer payments and seller monetization into Python applications |
+| Seller middleware | vendors / enterprises | Turns production HTTP routes into paid x402 endpoints |
+| Exact facilitator | operators | Optional self-hosted x402 exact settlement for supported EVM networks |
 
-## Architecture: Three Components
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                         OMNICLAW SYSTEM                            │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                     │
-│   OWNER SIDE (runs the Financial Policy Engine)   AGENT SIDE (uses CLI)     │
-│   ════════════════════════════════════════════════   ═══════════════════════   │
-│                                                                     │
-│   ┌─────────────────────────────┐                ┌─────────────────────┐   │
-│   │  Financial Policy Engine   │                │     OmniClaw CLI   │   │
-│   │  (uvicorn server)          │◄──────────────►│ (zero-trust exec)  │   │
-│   │                            │   HTTPS        │                    │   │
-│   │  - Holds private key       │                │  - pay             │   │
-│   │  - Enforces policy         │                │  - deposit         │   │
-│   │  - Signs transactions      │                │  - withdraw        │   │
-│   └─────────────────────────────┘                └─────────────────────┘   │
-│            │                                      │                 │
-│            │      Circle Nanopayment             │                 │
-│            └──────────────┬──────────────────────┘                 │
-│                           │                                          │
-│                    ┌──────▼──────┐                                  │
-│                    │   Circle    │                                  │
-│                    │   Gateway   │                                  │
-│                    │   (USDC)    │                                  │
-│                    └─────────────┘                                  │
-│                                                                     │
-└─────────────────────────────────────────────────────────────────────┘
-```
-
-### Why Two Parts?
-
-| Component | Who Runs It | What It Does |
-|-----------|-------------|--------------|
-| **Financial Policy Engine** | Owner/human | Holds private key, enforces policy, signs transactions |
-| **CLI** (agent uses) | Agent | Zero-trust execution layer - constrained command surface, cannot bypass policy |
-
----
-
-## Key Concepts
-
-### 1. Two Wallets Every Agent Has
-
-Every agent has **two wallets**:
-
-| Wallet | How It Works |
-|--------|--------------|
-| **EOA** (External Owned Account) | Derived from `OMNICLAW_PRIVATE_KEY`. Holds actual USDC on-chain. Used to sign deposits. |
-| **Circle Developer Wallet** | Created via policy.json. Where withdrawn funds go. The "circle wallet." |
-
-### 2. Why Deposit + Pay + Withdraw?
-
-```
-Your USDC starts here:         Then moves here:              Ends up here:
-┌──────────┐                  ┌────────────┐              ┌──────────────┐
-│   EOA    │ ─deposit───────► │  Gateway   │ ──pay──────► │    Seller    │
-│ (on-chain)│   (on-chain)    │  Contract  │   (x402)     │    EOA       │
-└──────────┘                  └────────────┘              └──────────────┘
-                                  │                              │
-                                  │ withdraw                     │
-                                  └──────────────► Circle Developer Wallet
-```
-
-- **Deposit**: Move USDC from your EOA → Gateway (on-chain, costs gas)
-- **Pay**: Use Gateway for gasless payments (x402 protocol)
-- **Withdraw**: Move USDC from Gateway → your Circle wallet
-
-### 3. Why Gasless Nanopayments?
-
-Circle's Gateway supports **EIP-3009** - off-chain authorization:
-- No gas needed for payments
-- Instant settlement
-- Circle batches and settles on-chain
-- Sub-cent transactions are economically viable
-
-This is what makes agent-to-agent commerce practical — agents can trade at high frequency without bleeding gas on every transaction.
-
-### 4. Seller Side: Accept Payments from Other Agents
-
-OmniClaw isn't just for buyers. You can protect your own endpoint behind x402 and accept payments from other agents:
-
-```python
-from omniclaw.protocols.nanopayments import GatewayMiddleware
-
-# Protect any async endpoint
-middleware = GatewayMiddleware(
-    price="0.01",  # 0.01 USDC per call
-    seller_address="0xYourAddress",
-)
-
-app = FastAPI()
-app.add_middleware(GatewayMiddleware, price="0.01")
-
-@app.get("/api/data")
-async def get_data():
-    return {"data": "expensive information"}
-```
-
-This opens your service to agent-to-agent commerce — other agents can pay your endpoint using gasless nanopayments.
-
----
-
-## Quick Start
-
-### 1. Install
+## Install
 
 ```bash
 pip install omniclaw
-# or
+```
+
+For local development:
+
+```bash
 uv add omniclaw
 ```
 
-### 2. Environment Variables (Required)
+## Choose The Right Path
+
+| If you are building... | Use... | Why |
+| --- | --- | --- |
+| An agent that needs to buy services | Financial Policy Engine + `omniclaw-cli` | The agent can pay without holding raw wallet authority |
+| A backend service that buys from paid APIs | Python SDK `client.pay(...)` | Programmatic payments inside your own app |
+| A vendor or enterprise API | Python SDK `client.sell(...)` | Production paid endpoints inside your application |
+| A temporary local paid agent service | `omniclaw-cli serve` | Fast agent-owned/local monetization, not the enterprise seller path |
+| Custom or Arc exact settlement infrastructure | `omniclaw facilitator exact` | Self-hosted standard x402 `verify` / `settle` |
+
+## Credential Model
+
+OmniClaw has two different key surfaces:
+
+- `OMNICLAW_PRIVATE_KEY` is the EOA key used for direct x402 exact settlement and Circle Gateway nanopayment signing.
+- `ENTITY_SECRET` is Circle's developer-controlled wallet encryption secret.
+
+If your Circle account/API key already has an Entity Secret, set it directly. Circle allows one active Entity Secret per account/API key. OmniClaw only auto-generates and registers a new one when no existing secret is provided or found in its managed local credential store.
 
 ```bash
-# Required to run
-export OMNICLAW_PRIVATE_KEY="0x..."     # Your agent's private key
-export OMNICLAW_AGENT_TOKEN="your-token" # Token from policy.json
-export OMNICLAW_AGENT_POLICY_PATH="/path/to/policy.json"
-export CIRCLE_API_KEY="your-circle-key" # Circle API key
-
-# Network (testnet or mainnet)
-export OMNICLAW_NETWORK="ETH-SEPOLIA"    # or ETH-MAINNET
-export OMNICLAW_ENV="production"         # set for mainnet
-
-# RPC for on-chain operations
-export OMNICLAW_RPC_URL="https://..."
-# Nanopayments CAIP-2 is derived from OMNICLAW_NETWORK (EVM only)
+export CIRCLE_API_KEY="..."
+export ENTITY_SECRET="your_existing_64_char_hex_entity_secret"
+export OMNICLAW_PRIVATE_KEY="0x..."
 ```
 
-### 3. Start Financial Policy Engine (Owner)
+For a non-interactive local setup:
 
 ```bash
-uvicorn omniclaw.agent.server:app --port 8080
+omniclaw setup --api-key "$CIRCLE_API_KEY" --entity-secret "$ENTITY_SECRET"
 ```
 
-This runs the Financial Policy Engine that holds the private key and enforces policy.
+## Buyer: Agent CLI
 
-### 4. Configure CLI (Agent)
+Use this when an autonomous agent or script should pay through the Financial Policy Engine.
 
-Agent runtime should set these (no interactive setup required):
+Start the owner-side policy engine:
+
+```bash
+export OMNICLAW_PRIVATE_KEY="0x..."
+export OMNICLAW_AGENT_TOKEN="agent-token"
+export OMNICLAW_AGENT_POLICY_PATH="./policy.json"
+export OMNICLAW_NETWORK="BASE-SEPOLIA"
+export OMNICLAW_RPC_URL="https://sepolia.base.org"
+
+omniclaw server --port 8080
+```
+
+Configure the agent runtime:
 
 ```bash
 export OMNICLAW_SERVER_URL="http://localhost:8080"
-export OMNICLAW_TOKEN="your-agent-token"
+export OMNICLAW_TOKEN="agent-token"
 ```
 
-Optional: persist config locally for dev workflows:
+Pay a protected x402 URL:
 
 ```bash
-omniclaw-cli configure --server-url http://localhost:8080 --token your-token --wallet primary
+omniclaw-cli can-pay --recipient https://seller.example.com/compute
+omniclaw-cli inspect-x402 --recipient https://seller.example.com/compute
+omniclaw-cli pay --recipient https://seller.example.com/compute --idempotency-key job-123
 ```
 
-CLI output is agent-first (JSON, no banner). For human-friendly output set:
+Pay a direct address:
 
 ```bash
-export OMNICLAW_CLI_HUMAN=1
+omniclaw-cli pay \
+  --recipient 0xRecipientAddress \
+  --amount 5.00 \
+  --purpose "service payment" \
+  --idempotency-key job-123
 ```
 
-Note: `omniclaw` and `omniclaw-cli` point to the same CLI.
+## Buyer: Python SDK
 
-## Examples
+Use this when a Python service should pay programmatically.
 
-- `examples/local-economy/README.md` — canonical local buyer/seller flow
-- `examples/business-compute/README.md` — business-facing paid compute and paid PDF seller using OmniClaw directly in a web app
+```python
+from omniclaw import Network, OmniClaw
 
----
+client = OmniClaw(network=Network.BASE_SEPOLIA)
 
-## For BUYERS (Paying for Services)
+result = await client.pay(
+    wallet_id="wallet-id",
+    recipient="https://seller.example.com/compute",
+    amount="1.00",
+    purpose="compute job",
+    idempotency_key="job-123",
+)
 
-### Step 1: Get USDC
-Send USDC to your EOA address (derived from OMNICLAW_PRIVATE_KEY)
-
-### Step 2: Deposit to Gateway
-```bash
-omniclaw-cli deposit --amount 10
-```
-→ Moves USDC from EOA → Circle Gateway contract (on-chain, costs gas)
-
-### Step 3: Pay for Services
-```bash
-# Pay another agent
-omniclaw-cli pay --recipient 0xDEAD... --amount 5
-
-# Or pay for x402 service (URL)
-omniclaw-cli pay --recipient https://api.example.com/data --amount 1
-```
-→ Uses gasless nanopayments via x402 protocol (Gateway CAIP-2 derived from `OMNICLAW_NETWORK`, EVM only)
-
-### Step 4: Withdraw to Circle Wallet
-```bash
-omniclaw-cli withdraw --amount 3
-```
-→ Moves USDC from Gateway → your Circle Developer Wallet
-
----
-
-## For SELLERS (Receiving Payments)
-
-### Option A: Simple Transfer
-Just share your address, receive payments directly:
-```bash
-omniclaw-cli address  # Get your address to share
+print(result.status, result.blockchain_tx or result.transaction_id)
 ```
 
-### Option B: x402 Payment Gate (Recommended)
-Expose your service behind payment:
+For x402 URLs, `amount` acts as the maximum spend allowed for that request. The seller's x402 requirements define the exact amount to settle.
+
+## Seller: Vendor / Enterprise SDK
+
+Use this when a vendor, enterprise, or application team wants to monetize API routes. This is the default seller path for real products.
+
+```python
+from fastapi import FastAPI
+from omniclaw import OmniClaw
+
+app = FastAPI()
+client = OmniClaw()
+
+@app.get("/premium-data")
+async def premium_data(
+    payment=client.sell("$0.25", seller_address="0xYourSellerWallet")
+):
+    return {
+        "data": "premium content",
+        "paid_by": payment.payer,
+        "amount": payment.amount,
+    }
+```
+
+The route returns `402 Payment Required` until the buyer submits a valid x402 payment. After verification and settlement, the handler executes and returns the paid response.
+
+## Seller: Agent-Owned Local Service
+
+Use this only when an agent or local automation wants to expose a temporary paid service. It is not the recommended integration path for vendor or enterprise APIs.
 
 ```bash
 omniclaw-cli serve \
-  --price 0.01 \
-  --endpoint /api/data \
-  --exec "python my_service.py" \
+  --price 0.25 \
+  --endpoint /compute \
+  --exec "python compute_job.py" \
   --port 8000
 ```
 
-This opens `http://localhost:8000/api/data` that requires USDC payment to access.
+For vendor and enterprise APIs, use the Python SDK middleware so payments are part of the application itself.
 
----
+## Settlement Paths
 
-## Complete CLI Commands
+OmniClaw is settlement-rail aware and policy-first. The buyer uses one execution path while the seller advertises the x402 requirements it supports.
 
-| Command | Description | Example |
-|---------|-------------|---------|
-| `configure` | Set Financial Policy Engine URL, token, wallet | `configure --server-url http://localhost:8080 --token mytoken --wallet primary` |
-| `address` | Get wallet address | `address` |
-| `balance` | Get wallet balance | `balance` |
-| `balance-detail` | Detailed balance (EOA, Gateway, Circle) | `balance-detail` |
-| `deposit` | Deposit USDC to Gateway | `deposit --amount 5` |
-| `withdraw` | Withdraw to Circle wallet | `withdraw --amount 2` |
-| `withdraw-trustless` | Trustless withdraw (~7-day fallback) | `withdraw-trustless --amount 2` |
-| `withdraw-trustless-complete` | Complete trustless withdraw after delay | `withdraw-trustless-complete` |
-| `pay` | Make payment | `pay --recipient 0x... --amount 5` |
-| `simulate` | Simulate payment | `simulate --recipient 0x... --amount 5` |
-| `serve` | Expose x402 payment gate | `serve --price 0.01 --endpoint /api --exec "echo hello"` |
-| `status` | Agent status | `status` |
-| `ping` | Health check | `ping` |
-| `ledger` | Transaction history | `ledger --limit 20` |
+| Path | Status | Notes |
+| --- | --- | --- |
+| Circle Gateway `GatewayWalletBatched` | supported | Gasless nanopayments through Circle Gateway |
+| Standard x402 exact via x402.org | live-proven on Base Sepolia | External exact facilitator validation |
+| OmniClaw self-hosted exact facilitator | live-proven on Arc Testnet | Self-hosted `verify` and `settle` for supported EVM profiles |
+| Thirdweb x402 HTTP facilitator | implemented and test-covered | Live account validation pending credentials |
 
----
+Current live proof:
 
-## Default Policy.json
+- Base Sepolia external x402 exact settlement
+- Arc Testnet self-hosted exact settlement
+- buyer/seller wallet separation
+- policy-controlled buyer route through `/api/v1/pay`
 
-Copy and edit `examples/policy-simple.json`:
+## Examples
 
-For full policy options, see **[docs/POLICY_REFERENCE.md](docs/POLICY_REFERENCE.md)**
-
-```json
-{
-  "version": "2.0",
-  "tokens": {
-    "YOUR_AGENT_TOKEN": {
-      "wallet_alias": "primary",
-      "active": true,
-      "label": "Your Agent Name"
-    }
-  },
-  "wallets": {
-    "primary": {
-      "name": "Primary Wallet",
-      "limits": {
-        "daily_max": "100.00",
-        "per_tx_max": "50.00"
-      },
-      "recipients": {
-        "mode": "allow_all"
-      }
-    }
-  }
-}
-```
-
----
-
-## Environment Variables Reference
-
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `OMNICLAW_PRIVATE_KEY` | Yes | Agent's private key for signing |
-| `OMNICLAW_AGENT_TOKEN` | Yes | Token matching policy.json |
-| `OMNICLAW_AGENT_POLICY_PATH` | Yes | Path to policy.json |
-| `OMNICLAW_NETWORK` | No | Network (ETH-SEPOLIA, ETH-MAINNET) |
-| `OMNICLAW_ENV` | No | Set to "production" for mainnet |
-| `OMNICLAW_RPC_URL` | No | RPC endpoint for on-chain ops |
-| `CIRCLE_API_KEY` | Yes | Circle API key |
-| `OMNICLAW_SERVER_URL` | No | Financial Policy Engine URL for the zero-trust CLI |
-
----
+| Example | Demonstrates |
+| --- | --- |
+| [B2B SDK Integration](examples/b2b-sdk-integration/README.md) | Enterprise buyer/seller SDK integration with multiple facilitators |
+| [Machine to Machine](examples/machine-to-machine/README.md) | One machine service paying another |
+| [Machine to Vendor](examples/machine-to-vendor/README.md) | Agent buyer paying a vendor-owned API |
+| [Vendor Integration](examples/vendor-integration/README.md) | Vendor-side paid API integration |
+| [Business Compute](examples/business-compute/README.md) | Payment-gated compute service |
+| [Local Economy](examples/local-economy/README.md) | Local buyer/seller economy with Docker |
+| [External x402 Facilitator](examples/external-x402-facilitator/README.md) | x402.org Base Sepolia validation |
+| [Thirdweb HTTP Facilitator](examples/thirdweb-http-facilitator/README.md) | Thirdweb HTTP API validation |
 
 ## Documentation
 
-- **[docs/agent-getting-started.md](docs/agent-getting-started.md)** - Agent setup walkthrough
-- **[docs/agent-skills.md](docs/agent-skills.md)** - Skill instructions for AI agents
-- **[docs/FEATURES.md](docs/FEATURES.md)** - Full feature documentation
+| Start Here | Use Case |
+| --- | --- |
+| [Documentation Index](docs/README.md) | Complete docs map |
+| [Developer Guide](docs/developer-guide.md) | Python SDK buyer and seller integration |
+| [Agent Getting Started](docs/agent-getting-started.md) | Agent CLI setup and usage |
+| [CLI Reference](docs/cli-reference.md) | Generated `omniclaw-cli` reference |
+| [Operator CLI](docs/operator-cli.md) | `omniclaw server`, setup, policy, facilitator commands |
+| [Policy Reference](docs/POLICY_REFERENCE.md) | Policy file structure and controls |
+| [Facilitators](docs/facilitators.md) | x402 facilitator model and deployment paths |
+| [Production Readiness](docs/production-readiness.md) | Proof status and release checklist |
+| [API Reference](docs/API_REFERENCE.md) | Python SDK and API details |
 
----
+## Development
+
+```bash
+uv sync --extra dev
+uv run pytest
+```
+
+Release verification:
+
+```bash
+./scripts/release_verify.sh
+```
+
+## Security
+
+OmniClaw is designed around separation of authority: agents do not need unrestricted wallet access. Production deployments should still use restricted keys, policy limits, confirmation thresholds, hardened secrets, and audited infrastructure.
+
+Report vulnerabilities through [SECURITY.md](SECURITY.md).
 
 ## License
 
-MIT — © 2026 [Omnuron AI](https://www.omniclaw.ai/). See [LICENSE](LICENSE) for details.
+MIT. See [LICENSE](LICENSE).

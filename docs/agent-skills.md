@@ -16,10 +16,12 @@ That full system is larger than the CLI alone:
 - the settlement rails include direct USDC transfers, x402, CCTP, and Circle Gateway nanopayments
 - the policy, trust, ledger, and concurrency controls are part of the overall OmniClaw system
 
-It is the same CLI on both sides of the economy:
+It is the same CLI for agent-side economic execution:
 
 - buyer side: `omniclaw-cli pay`
-- seller side: `omniclaw-cli serve`
+- temporary/local seller side: `omniclaw-cli serve`
+
+Vendor and enterprise seller APIs should use the Python SDK with `client.sell(...)`.
 
 That two-sided model matters:
 
@@ -35,17 +37,13 @@ There are now three separate artifacts, each with a different audience:
 
 - `docs/agent-skills.md`
   - human/operator guide
-- `.agents/skills/omniclaw-cli/SKILL.md`
-  - actual agent instruction file
-- `.agents/skills/omniclaw-cli/references/cli-reference.md`
-  - exact agent command reference generated from live CLI help
-
-There is also a human-copy of the generated command reference:
-
+- `docs/omniclaw-cli-skill/SKILL.md`
+  - public shipped skill specification
 - `docs/cli-reference.md`
+  - exact generated command reference for the public CLI surface
 
 This split is deliberate.
-It keeps agent instructions short and reliable while giving humans a fuller explanation.
+It keeps the public skill specification separate from the human/operator guide and generated command reference.
 
 ## Setup Model
 
@@ -280,6 +278,7 @@ Current top-level commands exposed by the CLI:
 ## Recommended Operational Rules
 
 - use `can-pay` for new recipients
+- use `inspect-x402` for a new paid URL before the first live payment
 - use `--idempotency-key` for job-based payments
 - use `balance-detail` when Gateway balances matter
 - use `simulate` when the amount or guard risk is non-trivial
@@ -293,12 +292,11 @@ The exact command reference is generated from the live CLI help surface.
 Regenerate it with:
 
 ```bash
-python .agents/skills/omniclaw-cli/scripts/generate_cli_reference.py
+python docs/omniclaw-cli-skill/scripts/generate_cli_reference.py
 ```
 
 Generated outputs:
 
-- `.agents/skills/omniclaw-cli/references/cli-reference.md`
 - `docs/cli-reference.md`
 
 That keeps the documented flags and command surface aligned with the actual CLI.
@@ -315,18 +313,19 @@ It is useful for things like:
 
 It is not required for the OmniClaw agent skill to work.
 
-For this repository, the functional sources of truth are:
+For this repository, the public sources of truth are:
 
-- `.agents/skills/omniclaw-cli/SKILL.md`
-- `.agents/skills/omniclaw-cli/references/cli-reference.md`
+- `docs/omniclaw-cli-skill/SKILL.md`
+- `docs/cli-reference.md`
 
-That keeps the runtime path minimal and avoids duplicating instruction content in another file.
+That keeps the shipped skill and the shipped command reference in public docs.
 
 ## Ship Recommendation
 
 This is now the recommended storage layout:
 
-- keep agent runtime instructions under `.agents/skills/omniclaw-cli/`
+- keep public shipped skill specs under `docs/`
+- keep repo-local internal-use skills under `.agents/skills/`
 - keep human/operator docs under `docs/`
 - keep the exact CLI reference generated, not handwritten
 

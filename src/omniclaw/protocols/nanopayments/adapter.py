@@ -966,7 +966,8 @@ class NanopaymentProtocolAdapter:
         """Check if this adapter can handle the recipient via nanopayments."""
         # URL → can try x402 with Gateway
         if _is_url(recipient):
-            return True
+            preferred_url_route = kwargs.get("preferred_url_route")
+            return preferred_url_route != "x402"
         # EVM address below micro threshold
         if _is_address(recipient):
             amount = kwargs.get("amount")
@@ -1027,7 +1028,7 @@ class NanopaymentProtocolAdapter:
             return PaymentResult(
                 success=result.success,
                 transaction_id=result.transaction or None,
-                blockchain_tx=result.transaction or None,
+                blockchain_tx=None,
                 amount=Decimal(result.amount_usdc) if result.amount_usdc else amount,
                 recipient=recipient,
                 method=PaymentMethod.NANOPAYMENT,

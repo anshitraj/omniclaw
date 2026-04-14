@@ -14,12 +14,13 @@ from pathlib import Path
 
 REQUIRED_MODULES = [
     "omniclaw/__init__.py",
-    "omniclaw/cli.py",
+    "omniclaw/admin_cli.py",
+    "omniclaw/cli/__init__.py",
     "omniclaw/cli_agent.py",
 ]
 
 EXPECTED_ENTRYPOINTS = {
-    "omniclaw": "omniclaw.cli:main",
+    "omniclaw": "omniclaw.admin_cli:main",
     "omniclaw-cli": "omniclaw.cli_agent:main",
 }
 
@@ -76,7 +77,8 @@ def smoke_install(wheel_path: Path) -> None:
                 "-c",
                 "import pathlib, sysconfig; "
                 "site = pathlib.Path(sysconfig.get_paths()['purelib']); "
-                "required = [site / 'omniclaw' / '__init__.py', site / 'omniclaw' / 'cli.py', "
+                "required = [site / 'omniclaw' / '__init__.py', "
+                "site / 'omniclaw' / 'admin_cli.py', site / 'omniclaw' / 'cli' / '__init__.py', "
                 "site / 'omniclaw' / 'cli_agent.py']; "
                 "missing = [str(p) for p in required if not p.exists()]; "
                 "assert not missing, f'missing installed files: {missing}'; "

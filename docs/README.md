@@ -1,45 +1,74 @@
-# OmniClaw Docs
+# OmniClaw Documentation
 
-This directory is split into two parts:
+OmniClaw is a policy-controlled payment layer for agents, applications, and machine services.
 
-- public product and developer docs in `docs/`
-- internal GTM, grant, outreach, and demo materials in `docs/internal/`
+Use this index to choose the right integration path.
 
-## Public Docs
+## Choose Your Path
 
-### Getting Started
+| Role | Start Here | What You Build |
+| --- | --- | --- |
+| Agent buyer | [Agent Getting Started](agent-getting-started.md) | An agent that pays through `omniclaw-cli` |
+| Python buyer | [Developer Guide](developer-guide.md) | A backend service that pays programmatically |
+| Vendor / enterprise seller | [Developer Guide](developer-guide.md) | A FastAPI service with paid endpoints through the SDK |
+| Operator | [Operator CLI](operator-cli.md) | Financial Policy Engine, policies, and facilitators |
+| Release owner | [Production Readiness](production-readiness.md) | Proof checklist and ship status |
 
-- `docs/agent-getting-started.md`
-- `docs/agent-skills.md`
-- `docs/cli-reference.md`
+## Buyer Guides
 
-### Examples
+| Guide | Use Case |
+| --- | --- |
+| [Agent Getting Started](agent-getting-started.md) | Configure an agent with `omniclaw-cli` |
+| [CLI Reference](cli-reference.md) | Full generated `omniclaw-cli` command reference |
+| [Developer Guide](developer-guide.md) | Pay with the Python SDK |
+| [API Reference](API_REFERENCE.md) | SDK methods, request shapes, and payment APIs |
 
-- `examples/local-economy/README.md`
-- `examples/business-compute/README.md`
+## Seller Guides
 
-### Product And Architecture
+| Guide | Use Case |
+| --- | --- |
+| [Developer Guide](developer-guide.md) | Add production paid FastAPI routes with `client.sell()` |
+| [B2B SDK Integration](../examples/b2b-sdk-integration/README.md) | Enterprise SDK deployment with Circle, Thirdweb, or self-hosted exact |
+| [Vendor Integration](../examples/vendor-integration/README.md) | Production-style vendor API integration |
+| [Business Compute](../examples/business-compute/README.md) | Payment-gated compute service |
+| [CLI Reference](cli-reference.md) | Agent-owned local service flow with `omniclaw-cli serve` |
 
-- `docs/FEATURES.md`
-- `docs/compliance-architecture.md`
-- `docs/architecture_overview.svg`
-- `docs/OmniClaw_Whitepaper_v1.0.pdf`
+## Machine Payment Examples
 
-### Technical Reference
+| Example | Demonstrates |
+| --- | --- |
+| [B2B SDK Integration](../examples/b2b-sdk-integration/README.md) | Enterprise buyer/seller SDK integration |
+| [Machine to Machine](../examples/machine-to-machine/README.md) | One automated service paying another |
+| [Machine to Vendor](../examples/machine-to-vendor/README.md) | Agent buyer paying a vendor-owned API |
+| [Local Economy](../examples/local-economy/README.md) | Local buyer/seller stack with Docker |
+| [External x402 Facilitator](../examples/external-x402-facilitator/README.md) | x402.org exact settlement on Base Sepolia |
+| [Thirdweb HTTP Facilitator](../examples/thirdweb-http-facilitator/README.md) | Thirdweb HTTP facilitator integration |
 
-- `docs/API_REFERENCE.md`
-- `docs/POLICY_REFERENCE.md`
-- `docs/SDK_USAGE_GUIDE.md`
-- `docs/CCTP_USAGE.md`
-- `docs/PRODUCTION_HARDENING.md`
-- `docs/erc_804_spec.md`
+## Operator and Production Docs
 
-## Internal Docs
+| Document | Covers |
+| --- | --- |
+| [Operator CLI](operator-cli.md) | `omniclaw server`, `omniclaw setup`, `omniclaw facilitator exact` |
+| [Policy Reference](POLICY_REFERENCE.md) | Tokens, wallets, budgets, recipient rules, confirmations |
+| [Facilitators](facilitators.md) | Circle Gateway, x402.org, Thirdweb, self-hosted exact |
+| [Production Readiness](production-readiness.md) | Live proof status and release checklist |
+| [Production Hardening](PRODUCTION_HARDENING.md) | Deployment controls, Redis, nonce, security settings |
 
-Use `docs/internal/README.md` for:
+## Architecture and Reference
 
-- grant strategy
-- sponsor and investor messaging
-- public post drafts
-- demo narration and story
-- archived older grant docs
+| Document | Covers |
+| --- | --- |
+| [Architecture and Features](FEATURES.md) | Core design, route selection, guards, settlement paths |
+| [Architecture Diagram](architecture_overview.svg) | System overview |
+| [Compliance Architecture](compliance-architecture.md) | Compliance and control framing |
+| [CCTP Usage](CCTP_USAGE.md) | Circle CCTP notes |
+| [ERC-804 Spec](erc_804_spec.md) | Trust-related specification notes |
+
+## Project Files
+
+| File | Purpose |
+| --- | --- |
+| [CHANGELOG](../CHANGELOG.md) | Release history |
+| [CONTRIBUTING](../CONTRIBUTING.md) | Development and PR workflow |
+| [SECURITY](../SECURITY.md) | Security reporting |
+| [ROADMAP](../ROADMAP.md) | Built status and planned work |

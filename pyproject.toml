@@ -86,7 +86,7 @@ Repository = "https://github.com/omnuron/omniclaw"
 Issues = "https://github.com/omnuron/omniclaw/issues"
 
 [project.scripts]
-omniclaw = "omniclaw.cli:main"
+omniclaw = "omniclaw.admin_cli:main"
 omniclaw-cli = "omniclaw.cli_agent:main"
 
 [dependency-groups]
@@ -127,7 +127,7 @@ warn_unused_ignores = true
 [tool.ruff.lint.per-file-ignores]
 # nanopayments __init__ needs specific import order to avoid circular imports
 "src/omniclaw/protocols/nanopayments/__init__.py" = ["I001"]
-"src/omniclaw/cli.py" = ["I001", "F401", "E402"]
+"src/omniclaw/admin_cli.py" = ["I001", "F401", "E402"]
 "src/omniclaw/__init__.py" = ["E402", "F401", "I001"]
 "src/omniclaw/agent/server.py" = ["E402", "F401"]
 "src/omniclaw/agent/routes.py" = ["B008", "UP037", "E402"]

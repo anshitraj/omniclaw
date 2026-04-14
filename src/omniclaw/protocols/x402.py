@@ -3,26 +3,30 @@
 from __future__ import annotations
 
 import base64
+import ipaddress
 import json
+import os
 import re
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlparse
 
 import httpx
 
-from omniclaw.core.exceptions import InsufficientBalanceError, ProtocolError, WalletError
+from omniclaw.core.exceptions import ProtocolError, WalletError
 from omniclaw.core.idempotency import derive_idempotency_key
 from omniclaw.core.logging import get_logger
-from omniclaw.core.state_machine import is_effective_success_status, is_irreversible_success_status
 from omniclaw.core.types import (
     FeeLevel,
     Network,
     PaymentMethod,
     PaymentResult,
     PaymentStatus,
+    network_to_caip2,
 )
 from omniclaw.protocols.base import ProtocolAdapter
+from omniclaw.protocols.x402_compat import patch_x402_web3_compat
 
 if TYPE_CHECKING:
     from omniclaw.core.config import Config
@@ -34,8 +38,9 @@ HEADER_PAYMENT_SIGNATURE = "PAYMENT-SIGNATURE"  # V2
 HEADER_PAYMENT_RESPONSE = "PAYMENT-RESPONSE"  # V2
 HEADER_PAYMENT_REQUIRED_V1 = "X-Payment-Required"  # V1 Legacy
 
-# URL pattern for detecting x402-compatible endpoints (HTTPS only)
-URL_PATTERN = re.compile(r"^https://")
+# URL pattern for detecting x402-compatible endpoints
+HTTPS_URL_PATTERN = re.compile(r"^https://")
+HTTP_URL_PATTERN = re.compile(r"^http://")
 
 _CAIP2_TO_NETWORK: dict[str, Network] = {
     "eip155:1": Network.ETH,
@@ -66,17 +71,42 @@ def _resolve_network(value: str) -> Network | None:
         return None
 
 
+@dataclass(frozen=True)
+class AcceptedPaymentKind:
+    """A single accepted x402 payment kind advertised by the seller."""
+
+    scheme: str
+    network: str
+    amount_atomic: str
+    recipient: str
+    extra: dict[str, Any] | None = None
+    asset: str | None = None
+    max_timeout_seconds: int | None = None
+
+    @property
+    def facilitator_name(self) -> str:
+        extra = self.extra or {}
+        return str(extra.get("name") or "").strip()
+
+    @property
+    def is_gateway_batched(self) -> bool:
+        return self.facilitator_name == "GatewayWalletBatched"
+
+    def get_amount_usdc(self) -> Decimal:
+        try:
+            return Decimal(int(self.amount_atomic)) / Decimal(10**6)
+        except Exception:
+            return Decimal(self.amount_atomic)
+
+
 @dataclass
 class PaymentRequirements:
     """Payment requirements parsed from a 402 response."""
 
-    scheme: str
-    network: str
-    max_amount_required: str  # Smallest unit
+    accepts: tuple[AcceptedPaymentKind, ...]
     resource: str
-    description: str
-    recipient: str
-    extra: dict[str, Any] | None = None
+    description: str = ""
+    x402_version: int = 2
 
     @classmethod
     def from_response(cls, response: httpx.Response) -> PaymentRequirements:
@@ -93,15 +123,11 @@ class PaymentRequirements:
                 # V2 format: {x402Version, accepts: [{scheme, network, asset, amount, payTo, ...}]}
                 accepts = data.get("accepts", [])
                 if accepts:
-                    kind = accepts[0]
                     return cls(
-                        scheme=kind.get("scheme", "exact"),
-                        network=kind.get("network", ""),
-                        max_amount_required=kind.get("amount", "0"),
+                        accepts=tuple(cls._parse_kind(kind) for kind in accepts),
                         resource=str(response.url),
                         description="",
-                        recipient=kind.get("payTo", ""),
-                        extra=kind.get("extra"),
+                        x402_version=int(data.get("x402Version", 2) or 2),
                     )
             except Exception:
                 pass
@@ -115,26 +141,27 @@ class PaymentRequirements:
             # Handle V2 body with 'accepts' array
             accepts = data.get("accepts")
             if accepts and isinstance(accepts, list):
-                kind = accepts[0]
                 return cls(
-                    scheme=kind.get("scheme", "exact"),
-                    network=kind.get("network", ""),
-                    max_amount_required=kind.get("amount", "0"),
+                    accepts=tuple(cls._parse_kind(kind) for kind in accepts),
                     resource=str(response.url),
                     description="",
-                    recipient=kind.get("payTo", ""),
-                    extra=kind.get("extra"),
+                    x402_version=int(data.get("x402Version", 2) or 2),
                 )
 
             # Legacy body format
             return cls(
-                scheme=data.get("scheme", "exact"),
-                network=data.get("network", ""),
-                max_amount_required=data.get("maxAmountRequired", data.get("amount", "0")),
+                accepts=(
+                    AcceptedPaymentKind(
+                        scheme=data.get("scheme", "exact"),
+                        network=data.get("network", ""),
+                        amount_atomic=data.get("maxAmountRequired", data.get("amount", "0")),
+                        recipient=data.get("paymentAddress", data.get("recipient", "")),
+                        extra=data.get("extra"),
+                    ),
+                ),
                 resource=data.get("resource", str(response.url)),
                 description=data.get("description", ""),
-                recipient=data.get("paymentAddress", data.get("recipient", "")),
-                extra=data.get("extra"),
+                x402_version=2,
             )
         except Exception:
             pass
@@ -155,25 +182,104 @@ class PaymentRequirements:
             decoded = base64.b64decode(header_value)
             data = json.loads(decoded)
             return cls(
-                scheme=data.get("scheme", "exact"),
-                network=data.get("network", ""),
-                max_amount_required=data.get("maxAmountRequired", "0"),
+                accepts=(
+                    AcceptedPaymentKind(
+                        scheme=data.get("scheme", "exact"),
+                        network=data.get("network", ""),
+                        amount_atomic=data.get("maxAmountRequired", "0"),
+                        recipient=data.get("paymentAddress", data.get("recipient", "")),
+                        extra=data.get("extra"),
+                    ),
+                ),
                 resource=data.get("resource", ""),
                 description=data.get("description", ""),
-                recipient=data.get("paymentAddress", data.get("recipient", "")),
-                extra=data.get("extra"),
+                x402_version=1,
             )
         except Exception as e:
             raise ProtocolError(f"Failed to parse payment requirements: {e}") from e
 
-    def get_amount_usdc(self) -> Decimal:
-        """Get amount in USDC (assuming 6 decimals for USDC)."""
-        try:
-            # Amount is usually in smallest unit (e.g., for USDC with 6 decimals)
-            amount_int = int(self.max_amount_required)
-            return Decimal(amount_int) / Decimal(10**6)
-        except Exception:
-            return Decimal(self.max_amount_required)
+    @staticmethod
+    def _parse_kind(kind: dict[str, Any]) -> AcceptedPaymentKind:
+        return AcceptedPaymentKind(
+            scheme=kind.get("scheme", "exact"),
+            network=kind.get("network", ""),
+            amount_atomic=kind.get("amount", "0"),
+            recipient=kind.get("payTo", ""),
+            extra=kind.get("extra"),
+            asset=kind.get("asset"),
+            max_timeout_seconds=kind.get("maxTimeoutSeconds"),
+        )
+
+    def select_preferred_kind(
+        self,
+        *,
+        prefer_gateway: bool = False,
+        source_network: Network | None = None,
+    ) -> AcceptedPaymentKind | None:
+        """
+        Select the best supported x402 kind from the seller's advertised accepts list.
+
+        Buyer-side policy:
+        - If prefer_gateway=True, prefer GatewayWalletBatched on the buyer's current network
+        - Otherwise ignore GatewayWalletBatched and choose a non-gateway exact kind
+        - Prefer same-network kinds before cross-network kinds
+        """
+        if not self.accepts:
+            return None
+
+        target_caip2 = None
+        if source_network is not None:
+            target_caip2 = {
+                Network.ETH: "eip155:1",
+                Network.ETH_SEPOLIA: "eip155:11155111",
+                Network.AVAX: "eip155:43114",
+                Network.AVAX_FUJI: "eip155:43113",
+                Network.MATIC: "eip155:137",
+                Network.MATIC_AMOY: "eip155:80002",
+                Network.ARB: "eip155:42161",
+                Network.ARB_SEPOLIA: "eip155:421614",
+                Network.BASE: "eip155:8453",
+                Network.BASE_SEPOLIA: "eip155:84532",
+                Network.OP: "eip155:10",
+                Network.OP_SEPOLIA: "eip155:11155420",
+                Network.ARC_TESTNET: "eip155:5042002",
+            }.get(source_network)
+
+        candidates = [
+            kind
+            for kind in self.accepts
+            if kind.scheme == "exact"
+            and (kind.is_gateway_batched if prefer_gateway else not kind.is_gateway_batched)
+        ]
+        if not candidates:
+            return None
+
+        same_network = [
+            kind for kind in candidates if target_caip2 and kind.network == target_caip2
+        ]
+        if same_network:
+            return same_network[0]
+        return candidates[0]
+
+
+def _is_allowed_insecure_http(url: str) -> bool:
+    """Allow HTTP URLs only for localhost/private networks in non-production."""
+    if not HTTP_URL_PATTERN.match(url):
+        return False
+    parsed = urlparse(url)
+    host = parsed.hostname or ""
+    if host in {"localhost", "127.0.0.1"}:
+        return True
+
+    env = os.environ.get("OMNICLAW_ENV", "development").lower()
+    if env in {"prod", "production", "mainnet"}:
+        return False
+
+    try:
+        ip = ipaddress.ip_address(host)
+        return ip.is_private or ip.is_loopback or ip.is_link_local
+    except ValueError:
+        return host.endswith(".local")
 
 
 @dataclass
@@ -201,6 +307,76 @@ class PaymentPayload:
         }
         json_str = json.dumps(data)
         return base64.b64encode(json_str.encode()).decode()
+
+
+class _OmniClawExactSigner:
+    """Minimal EVM signer for the upstream x402 exact client."""
+
+    def __init__(self, private_key: str) -> None:
+        from eth_account import Account
+
+        self._private_key = private_key
+        self._account = Account.from_key(private_key)
+
+    @property
+    def address(self) -> str:
+        return self._account.address
+
+    def sign_typed_data(
+        self,
+        domain: Any,
+        types: dict[str, list[Any]],
+        primary_type: str,
+        message: dict[str, Any],
+    ) -> bytes:
+        from eth_account import Account
+        from eth_account.messages import encode_typed_data
+
+        if isinstance(domain, dict):
+            domain_dict = domain
+        else:
+            domain_dict = {
+                "name": getattr(domain, "name", None),
+                "chainId": getattr(domain, "chain_id", None),
+                "verifyingContract": getattr(domain, "verifying_contract", None),
+            }
+            domain_version = getattr(domain, "version", None)
+            if domain_version:
+                domain_dict["version"] = domain_version
+        domain_dict = {key: value for key, value in domain_dict.items() if value is not None}
+
+        domain_field_map = {
+            "name": {"name": "name", "type": "string"},
+            "version": {"name": "version", "type": "string"},
+            "chainId": {"name": "chainId", "type": "uint256"},
+            "verifyingContract": {"name": "verifyingContract", "type": "address"},
+            "salt": {"name": "salt", "type": "bytes32"},
+        }
+        full_types: dict[str, list[dict[str, str]]] = {
+            "EIP712Domain": [
+                domain_field_map[key] for key in domain_dict if key in domain_field_map
+            ]
+        }
+        for type_name, fields in types.items():
+            full_types[type_name] = [
+                {"name": field.name, "type": field.type} if hasattr(field, "name") else field
+                for field in fields
+            ]
+
+        message_copy = dict(message)
+        if "nonce" in message_copy and isinstance(message_copy["nonce"], bytes):
+            message_copy["nonce"] = "0x" + message_copy["nonce"].hex()
+
+        signable = encode_typed_data(
+            full_message={
+                "types": full_types,
+                "primaryType": primary_type,
+                "domain": domain_dict,
+                "message": message_copy,
+            }
+        )
+        signed = Account.sign_message(signable, self._private_key)
+        return bytes(signed.signature)
 
 
 class X402Adapter(ProtocolAdapter):
@@ -258,7 +434,7 @@ class X402Adapter(ProtocolAdapter):
         Returns:
             True if recipient is a valid HTTP(S) URL
         """
-        return bool(URL_PATTERN.match(recipient))
+        return bool(HTTPS_URL_PATTERN.match(recipient) or _is_allowed_insecure_http(recipient))
 
     async def _get_http_client(self) -> httpx.AsyncClient:
         """Get or create HTTP client."""
@@ -285,6 +461,80 @@ class X402Adapter(ProtocolAdapter):
 
         return response, None
 
+    @staticmethod
+    def _atomic_to_decimal(amount_atomic: str) -> Decimal:
+        return Decimal(int(amount_atomic)) / Decimal(10**6)
+
+    @staticmethod
+    def _decimal_to_atomic(amount_decimal: Decimal) -> int:
+        return int((amount_decimal * Decimal(10**6)).to_integral_value())
+
+    @staticmethod
+    def _decode_response_body(response: httpx.Response) -> Any:
+        try:
+            return response.json()
+        except Exception:
+            return response.text
+
+    def _resolve_agent_network(
+        self,
+        wallet_id: str,
+        source_network: Network | str | None,
+    ) -> Network | None:
+        if source_network:
+            if isinstance(source_network, Network):
+                return source_network
+            return Network.from_string(str(source_network))
+
+        try:
+            agent_wallet = self._wallet_service.get_wallet(wallet_id)
+            return Network.from_string(agent_wallet.blockchain)
+        except Exception:
+            return None
+
+    def _get_generic_x402_private_key(self) -> str:
+        private_key = self._config.nanopayments_private_key or os.environ.get(
+            "OMNICLAW_PRIVATE_KEY"
+        )
+        if not private_key:
+            raise WalletError("OMNICLAW_PRIVATE_KEY is required for generic x402 exact payments")
+        if not private_key.startswith("0x"):
+            private_key = f"0x{private_key}"
+        return private_key
+
+    def _build_sdk_http_client(
+        self,
+        *,
+        max_amount: Decimal,
+        preferred_network: str | None,
+    ) -> tuple[Any, dict[str, Any]]:
+        patch_x402_web3_compat()
+
+        from x402.client import max_amount as x402_max_amount
+        from x402.client import prefer_network as x402_prefer_network
+        from x402.client import prefer_scheme as x402_prefer_scheme
+        from x402.client import x402Client
+        from x402.http import x402HTTPClient
+        from x402.mechanisms.evm.exact.client import ExactEvmScheme
+
+        x402_client = x402Client()
+        x402_client.register(
+            "eip155:*",
+            ExactEvmScheme(_OmniClawExactSigner(self._get_generic_x402_private_key())),
+        )
+        x402_client.register_policy(x402_prefer_scheme("exact"))
+        if preferred_network:
+            x402_client.register_policy(x402_prefer_network(preferred_network))
+        x402_client.register_policy(x402_max_amount(self._decimal_to_atomic(max_amount)))
+
+        selection_state: dict[str, Any] = {}
+
+        async def _capture_selection(ctx: Any) -> None:
+            selection_state["requirements"] = ctx.selected_requirements
+
+        x402_client.on_after_payment_creation(_capture_selection)
+        return x402HTTPClient(x402_client), selection_state
+
     async def execute(
         self,
         wallet_id: str,
@@ -299,25 +549,27 @@ class X402Adapter(ProtocolAdapter):
         timeout_seconds: float | None = None,
         **kwargs: Any,
     ) -> PaymentResult:
-        """Execute an x402 payment (V2)."""
+        """Execute an x402 exact payment using the upstream x402 SDK."""
         url = recipient
         strict_settlement = bool(getattr(self._config, "payment_strict_settlement", True))
         request_method = str(kwargs.get("http_method", kwargs.get("method", "GET"))).upper()
         request_headers = kwargs.get("request_headers") or kwargs.get("headers")
         request_json = kwargs.get("request_json")
         request_body = kwargs.get("request_body", kwargs.get("body"))
+        agent_network = self._resolve_agent_network(wallet_id, source_network)
+        agent_caip2 = network_to_caip2(agent_network)
 
         try:
-            # Check for 402
-            response, requirements = await self._request_with_402_check(
+            client = await self._get_http_client()
+            initial_response = await client.request(
+                request_method,
                 url,
-                method=request_method,
+                headers=request_headers,
                 json=request_json,
                 content=request_body,
-                headers=request_headers,
             )
 
-            if response.status_code != 402:
+            if initial_response.status_code != 402:
                 return PaymentResult(
                     success=True,
                     transaction_id=None,
@@ -326,247 +578,146 @@ class X402Adapter(ProtocolAdapter):
                     recipient=url,
                     method=self.method,
                     status=PaymentStatus.COMPLETED,
-                    metadata={"http_status": response.status_code, "note": "No 402"},
+                    metadata={"http_status": initial_response.status_code, "note": "No 402"},
                 )
 
-            if not requirements:
-                return PaymentResult(
-                    success=False,
-                    transaction_id=None,
-                    blockchain_tx=None,
-                    amount=amount,
-                    recipient=url,
-                    method=self.method,
-                    status=PaymentStatus.FAILED,
-                    error="Server returned 402 but extraction failed",
-                )
+            x402_http_client, selection_state = self._build_sdk_http_client(
+                max_amount=amount,
+                preferred_network=agent_caip2,
+            )
 
-            # Validate Amount
-            required_amount = requirements.get_amount_usdc()
-            if required_amount > amount:
-                return PaymentResult(
-                    success=False,
-                    transaction_id=None,
-                    blockchain_tx=None,
-                    amount=required_amount,
-                    recipient=url,
-                    method=self.method,
-                    status=PaymentStatus.FAILED,
-                    error=f"Required {required_amount} > Max {amount}",
-                )
-
-            # Transfer to seller
-            payment_address = requirements.recipient
-            if not payment_address:
-                return PaymentResult(
-                    success=False,
-                    transaction_id=None,
-                    blockchain_tx=None,
-                    amount=required_amount,
-                    recipient=url,
-                    method=self.method,
-                    status=PaymentStatus.FAILED,
-                    error="No payment address found in requirements",
-                )
-
-            # Resolve network
-            from omniclaw.core.types import Network
-
-            if source_network:
-                if isinstance(source_network, Network):
-                    agent_network = source_network
-                else:
-                    agent_network = Network.from_string(str(source_network))
-            else:
-                agent_wallet = self._wallet_service.get_wallet(wallet_id)
-                agent_network = Network.from_string(agent_wallet.blockchain)
-
-            # Parse seller's network from requirements (CAIP-2 and enum values supported)
-            seller_network = _resolve_network(requirements.network)
-            if seller_network is None:
-                return PaymentResult(
-                    success=False,
-                    transaction_id=None,
-                    blockchain_tx=None,
-                    amount=required_amount,
-                    recipient=url,
-                    method=self.method,
-                    status=PaymentStatus.FAILED,
-                    error=f"Invalid network in payment requirements: {requirements.network}",
-                )
-
-            # Check if cross-chain transfer is needed
-            is_cross_chain = agent_network != seller_network
+            await initial_response.aread()
+            get_header, body_data = x402_http_client._handle_402_common(
+                dict(initial_response.headers),
+                initial_response.content or None,
+            )
+            payment_required = x402_http_client.get_payment_required_response(get_header, body_data)
             canonical_idempotency_key = idempotency_key or derive_idempotency_key(
                 "x402",
                 wallet_id,
                 url,
                 request_method,
-                requirements.scheme,
-                requirements.network,
-                requirements.recipient,
-                requirements.max_amount_required,
                 request_json,
                 request_body,
+                agent_caip2,
             )
+            payment_payload = await x402_http_client.create_payment_payload(payment_required)
+            selected_requirements = selection_state.get("requirements") or payment_payload.accepted
+            required_amount = self._atomic_to_decimal(str(selected_requirements.amount))
+            payment_address = str(selected_requirements.pay_to)
 
-            if is_cross_chain:
-                # Cross-chain: Use GatewayAdapter (CCTP)
-                self._logger.info(
-                    f"x402 cross-chain: {agent_network.value} → {seller_network.value}"
-                )
-                from omniclaw.protocols.gateway import GatewayAdapter
-
-                gateway = GatewayAdapter(self._config, self._wallet_service)
-                gateway_result = await gateway.execute(
-                    wallet_id=wallet_id,
-                    recipient=payment_address,
-                    amount=required_amount,
-                    purpose=purpose,
-                    fee_level=fee_level,
-                    idempotency_key=canonical_idempotency_key,
-                    wait_for_completion=True,
-                    destination_chain=seller_network,
-                    source_network=agent_network,
-                )
-
-                if not (
-                    gateway_result.success or is_effective_success_status(gateway_result.status)
-                ):
-                    return PaymentResult(
-                        success=False,
-                        transaction_id=gateway_result.transaction_id,
-                        blockchain_tx=gateway_result.blockchain_tx,
-                        amount=required_amount,
-                        recipient=url,
-                        method=self.method,
-                        status=PaymentStatus.FAILED,
-                        error=f"Cross-chain transfer failed: {gateway_result.error}",
-                    )
-
-                # Use gateway result for payment proof
-                transfer_tx_hash = gateway_result.blockchain_tx
-                transfer_tx_id = gateway_result.transaction_id
-                transfer_status = gateway_result.status
-            else:
-                # Same chain: Direct transfer
-                transfer_result = await self._wallet_service.transfer(
-                    wallet_id=wallet_id,
-                    destination_address=payment_address,
-                    amount=required_amount,
-                    fee_level=fee_level,
-                    wait_for_completion=True,
-                    idempotency_key=canonical_idempotency_key,
-                )
-
-                if not transfer_result.success:
-                    return PaymentResult(
-                        success=False,
-                        transaction_id=transfer_result.transaction.id
-                        if transfer_result.transaction
-                        else None,
-                        blockchain_tx=transfer_result.tx_hash,
-                        amount=required_amount,
-                        recipient=url,
-                        method=self.method,
-                        status=PaymentStatus.FAILED,
-                        error=f"Transfer failed: {transfer_result.error}",
-                    )
-
-                transfer_tx_hash = transfer_result.tx_hash
-                transfer_tx_id = (
-                    transfer_result.transaction.id if transfer_result.transaction else None
-                )
-                tx = transfer_result.transaction
-                tx_state = (
-                    tx.state.value
-                    if (tx and hasattr(tx.state, "value"))
-                    else (str(tx.state) if tx else "")
-                )
-                if tx and tx_state == "COMPLETE":
-                    transfer_status = (
-                        PaymentStatus.SETTLED if strict_settlement else PaymentStatus.COMPLETED
-                    )
-                elif tx and tx_state in ("FAILED", "CANCELLED"):
-                    transfer_status = (
-                        PaymentStatus.FAILED_FINAL if strict_settlement else PaymentStatus.FAILED
-                    )
-                else:
-                    transfer_status = (
-                        PaymentStatus.PENDING_SETTLEMENT
-                        if strict_settlement
-                        else PaymentStatus.PROCESSING
-                    )
-
-            # Create Payload (V2)
-            payload = PaymentPayload(
-                x402_version=2,
-                scheme=requirements.scheme,
-                network=requirements.network,
-                resource=url,
-                payload={
-                    "transactionHash": transfer_tx_hash,
-                    "fromAddress": self._wallet_service.get_wallet(wallet_id).address,
-                    "toAddress": payment_address,
-                    "amount": str(required_amount),
-                },
-            )
-
-            # Retry with PAYMENT-SIGNATURE while preserving caller-provided headers
-            payment_header = payload.to_header()
-            headers: dict[str, str] = {}
+            retry_headers: dict[str, str] = {}
             if isinstance(request_headers, dict):
-                for k, v in request_headers.items():
-                    headers[str(k)] = str(v)
-            headers[HEADER_PAYMENT_SIGNATURE] = payment_header
+                for key, value in request_headers.items():
+                    retry_headers[str(key)] = str(value)
+            retry_headers.update(x402_http_client.encode_payment_signature_header(payment_payload))
 
-            client = await self._get_http_client()
             final_response = await client.request(
                 request_method,
                 url,
-                headers=headers,
+                headers=retry_headers,
                 json=request_json,
                 content=request_body,
             )
 
+            settle_response = None
+            settle_error: str | None = None
+            try:
+                settle_response = x402_http_client.get_payment_settle_response(
+                    lambda name: final_response.headers.get(name)
+                )
+            except Exception as exc:
+                settle_error = str(exc)
+
+            response_data = self._decode_response_body(final_response)
+            settled_ok = bool(settle_response and settle_response.success)
+            transaction_id = (
+                str(settle_response.transaction)
+                if settle_response and getattr(settle_response, "transaction", None)
+                else None
+            )
+            settlement_network = (
+                str(settle_response.network)
+                if settle_response and getattr(settle_response, "network", None)
+                else None
+            )
+            payer = (
+                str(settle_response.payer)
+                if settle_response and getattr(settle_response, "payer", None)
+                else None
+            )
+            metadata = {
+                "http_status": final_response.status_code,
+                "scheme": str(selected_requirements.scheme),
+                "payment_network": str(selected_requirements.network),
+                "settlement_network": settlement_network,
+                "payment_asset": str(selected_requirements.asset),
+                "amount_atomic": str(selected_requirements.amount),
+                "payer": payer,
+                "pay_to": payment_address,
+                "idempotency_key": canonical_idempotency_key,
+            }
+
             if 200 <= final_response.status_code < 300:
-                # Parse response body
-                try:
-                    response_data = final_response.json()
-                except Exception:
-                    response_data = final_response.text
+                if strict_settlement and not settled_ok:
+                    error_message = (
+                        (
+                            getattr(settle_response, "error_message", None)
+                            if settle_response
+                            else None
+                        )
+                        or (
+                            getattr(settle_response, "error_reason", None)
+                            if settle_response
+                            else None
+                        )
+                        or settle_error
+                        or "Missing PAYMENT-RESPONSE header"
+                    )
+                    return PaymentResult(
+                        success=False,
+                        transaction_id=transaction_id,
+                        blockchain_tx=transaction_id,
+                        amount=required_amount,
+                        recipient=url,
+                        method=self.method,
+                        status=PaymentStatus.FAILED_FINAL,
+                        error=f"x402 settlement failed: {error_message}",
+                        resource_data=response_data,
+                        metadata=metadata,
+                    )
 
                 return PaymentResult(
-                    success=is_irreversible_success_status(transfer_status)
-                    if strict_settlement
-                    else True,
-                    transaction_id=transfer_tx_id,
-                    blockchain_tx=transfer_tx_hash,
+                    success=True,
+                    transaction_id=transaction_id,
+                    blockchain_tx=transaction_id,
                     amount=required_amount,
                     recipient=url,
                     method=self.method,
-                    status=transfer_status if strict_settlement else PaymentStatus.COMPLETED,
-                    resource_data=response_data,  # Store the actual API response
-                    metadata={
-                        "http_status": final_response.status_code,
-                        "payment_response": final_response.headers.get(HEADER_PAYMENT_RESPONSE, ""),
-                        "cross_chain": is_cross_chain,
-                        "idempotency_key": canonical_idempotency_key,
-                    },
-                )
-            else:
-                return PaymentResult(
-                    success=False,
-                    transaction_id=transfer_tx_id,
-                    blockchain_tx=transfer_tx_hash,
-                    amount=required_amount,
-                    recipient=url,
-                    method=self.method,
-                    status=PaymentStatus.FAILED,
-                    error=f"Rejected: HTTP {final_response.status_code}",
+                    status=PaymentStatus.SETTLED if strict_settlement else PaymentStatus.COMPLETED,
+                    resource_data=response_data,
+                    metadata=metadata,
                 )
 
-        except (httpx.HTTPError, WalletError, InsufficientBalanceError, ValueError, KeyError) as e:
+            error_message = (
+                (getattr(settle_response, "error_message", None) if settle_response else None)
+                or (getattr(settle_response, "error_reason", None) if settle_response else None)
+                or f"Rejected: HTTP {final_response.status_code}"
+            )
+            return PaymentResult(
+                success=False,
+                transaction_id=transaction_id,
+                blockchain_tx=transaction_id,
+                amount=required_amount,
+                recipient=url,
+                method=self.method,
+                status=PaymentStatus.FAILED_FINAL if strict_settlement else PaymentStatus.FAILED,
+                error=f"x402 payment rejected: {error_message}",
+                resource_data=response_data,
+                metadata=metadata,
+            )
+
+        except Exception as e:
             return PaymentResult(
                 success=False,
                 transaction_id=None,
@@ -603,7 +754,7 @@ class X402Adapter(ProtocolAdapter):
             return result
 
         try:
-            response, requirements = await self._request_with_402_check(recipient)
+            response, _ = await self._request_with_402_check(recipient)
 
             if response.status_code != 402:
                 result["would_succeed"] = True
@@ -611,27 +762,32 @@ class X402Adapter(ProtocolAdapter):
                 result["http_status"] = response.status_code
                 return result
 
-            if requirements:
-                required_amount = requirements.get_amount_usdc()
-                result["required_amount"] = str(required_amount)
-                result["payment_address"] = requirements.recipient
-                result["description"] = requirements.description
+            agent_network = self._resolve_agent_network(wallet_id, kwargs.get("source_network"))
+            agent_caip2 = network_to_caip2(agent_network)
+            x402_http_client, selection_state = self._build_sdk_http_client(
+                max_amount=amount,
+                preferred_network=agent_caip2,
+            )
+            await response.aread()
+            get_header, body_data = x402_http_client._handle_402_common(
+                dict(response.headers),
+                response.content or None,
+            )
+            payment_required = x402_http_client.get_payment_required_response(get_header, body_data)
+            payment_payload = await x402_http_client.create_payment_payload(payment_required)
+            selected_requirements = selection_state.get("requirements") or payment_payload.accepted
 
-                if required_amount <= amount:
-                    # Check wallet balance
-                    balance = self._wallet_service.get_usdc_balance_amount(wallet_id)
-                    if balance >= required_amount:
-                        result["would_succeed"] = True
-                        result["current_balance"] = str(balance)
-                    else:
-                        result["would_succeed"] = False
-                        result["reason"] = f"Insufficient balance: {balance} < {required_amount}"
-                else:
-                    result["would_succeed"] = False
-                    result["reason"] = f"Required amount {required_amount} exceeds max {amount}"
-            else:
-                result["would_succeed"] = False
-                result["reason"] = "No payment requirements in 402 response"
+            required_amount = self._atomic_to_decimal(str(selected_requirements.amount))
+            result["would_succeed"] = True
+            result["required_amount"] = str(required_amount)
+            result["payment_address"] = str(selected_requirements.pay_to)
+            result["payment_network"] = str(selected_requirements.network)
+            result["payment_asset"] = str(selected_requirements.asset)
+            result["scheme"] = str(selected_requirements.scheme)
+            result["reason"] = (
+                "Buyer can create a valid x402 payment payload. "
+                "Execution still depends on seller-side settlement and on-chain balance."
+            )
 
         except Exception as e:
             result["would_succeed"] = False
