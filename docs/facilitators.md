@@ -48,7 +48,7 @@ OmniClaw's product responsibility:
 - enforce buyer policy before money moves
 - choose a fundable route
 - sign only the allowed action
-- preserve logs, limits, and operator visibility
+- preserve logs, limits, and payment visibility
 
 That means a seller can use managed facilitator coverage, while the buyer still uses OmniClaw as the policy-controlled execution layer.
 
@@ -120,6 +120,7 @@ Current route priority:
 - use `exact` when the seller supports standard x402 exact settlement
 - if the seller supports both and Gateway is not ready, use `exact`
 - if no supported route is available, fail clearly before spending
+- for direct exact payments, inspect checks the buyer's direct-wallet token balance when the selected EVM network and RPC are known
 
 ## Self-Host An Exact Facilitator
 
@@ -298,13 +299,73 @@ So the operational requirement for an already configured profile is only:
 
 That is a deployment requirement, not a missing architecture requirement.
 
+For Arc Testnet, the buyer key must hold Arc Testnet USDC. The seller/facilitator key must hold Arc Testnet gas because it submits the x402 exact settlement transaction to the USDC contract.
+
+To run only the Arc self-hosted exact facilitator:
+
+```bash
+export OMNICLAW_X402_FACILITATOR_PRIVATE_KEY="0xFacilitatorKeyWithArcGas"
+bash scripts/start_arc_exact_facilitator.sh
+```
+
+Equivalent installed CLI:
+
+```bash
+omniclaw facilitator exact \
+  --network-profile ARC-TESTNET \
+  --network eip155:5042002 \
+  --rpc-url https://rpc.testnet.arc.network \
+  --port 4022
+```
+
+The facilitator exposes:
+
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /supported` | Advertise supported x402 schemes and networks |
+| `POST /verify` | Verify a signed x402 payment payload |
+| `POST /settle` | Submit settlement on Arc Testnet |
+
 For a visual Arc vendor demo, use the Arc marketplace showcase:
 
 ```bash
-bash scripts/start_arc_marketplace_showcase.sh
+bash scripts/start_arc_marketplace_showcase_docker.sh
 ```
 
 Runbook: [../examples/arc-marketplace-showcase/README.md](../examples/arc-marketplace-showcase/README.md).
+
+The showcase includes a browser mini buyer agent. It calls the kiosk backend, and the kiosk backend calls the buyer Financial Policy Engine using `ARC_MARKETPLACE_BUYER_ENGINE_URL` and `ARC_MARKETPLACE_BUYER_TOKEN`. This keeps the browser flow simple while the Financial Policy Engine remains the payment authority boundary.
+
+The Docker launcher starts:
+
+| Service | URL |
+| --- | --- |
+| Browser UI | `http://127.0.0.1:8020` |
+| Vendor kiosk | `http://172.18.0.51:8020` |
+| Buyer policy engine | `http://172.18.0.52:8080` |
+| Exact facilitator | `http://172.18.0.50:4022` |
+
+It also prints the buyer Arc USDC balance, seller Arc gas balance, and the paid product URLs:
+
+| Product | Price | URL |
+| --- | --- | --- |
+| Prime Market Scan | `$0.25` | `http://172.18.0.51:8020/buy/prime-market-scan` |
+| Risk Oracle Brief | `$0.15` | `http://172.18.0.51:8020/buy/risk-oracle-brief` |
+| Settlement Receipt Kit | `$0.10` | `http://172.18.0.51:8020/buy/settlement-receipt-kit` |
+
+For ecosystem forms that require a contract address, use the Arc Testnet USDC contract used by x402 exact settlement:
+
+```text
+0x3600000000000000000000000000000000000000
+```
+
+OmniClaw does not require a custom application contract for this flow. The settlement transaction calls `transferWithAuthorization` on Arc Testnet USDC.
+
+Latest public proof transaction:
+
+```text
+https://testnet.arcscan.app/tx/0xd40dc800a54bee4ff80da4709e65cfd3d0346eb1995ebc34fba433a6306b9219
+```
 
 ## External Facilitators
 

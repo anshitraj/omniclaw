@@ -2,7 +2,7 @@
 
 This is the short production checklist for OmniClaw.
 
-Use it before publishing a release, running a pilot, or demoing a real external facilitator flow.
+Use it before publishing a release, running a pilot, or validating a real external payment flow.
 
 ## What OmniClaw Is
 
@@ -13,7 +13,7 @@ It does four things:
 - inspects what a seller accepts
 - enforces buyer policy before money moves
 - routes to a compatible payment rail
-- records what happened for operators
+- records what happened for audit and operations
 
 ## Facilitator Strategy
 
@@ -25,7 +25,7 @@ Supported facilitator paths:
 - Thirdweb can provide broad gas-sponsored x402 settlement
 - Circle Gateway can provide batched gasless nanopayments
 - x402.org or other facilitators can support standard exact settlement
-- OmniClaw self-hosted exact facilitator is optional infrastructure for proof, Arc/custom networks, and self-hosted control
+- OmniClaw self-hosted exact facilitator is available for Arc, custom networks, and self-hosted control
 
 ## Validating Deployment Readiness
 
@@ -40,9 +40,9 @@ For any production environment deployment, we recommend verifying:
 
 Ensure this validation checklist is complete before moving to production.
 
-## Buyer Lock
+## Buyer Readiness
 
-The buyer path is locked when:
+The buyer path is ready when:
 
 - `omniclaw-cli can-pay` works
 - `omniclaw-cli inspect-x402` reports the selected route
@@ -51,24 +51,24 @@ The buyer path is locked when:
 - exact x402 payments use the standard x402 SDK path
 - Gateway payments require Gateway readiness before selecting `GatewayWalletBatched`
 
-## Seller Lock
+## Seller Readiness
 
-The seller path is locked when:
+The seller path is ready when:
 
 - seller advertises correct x402 requirements
 - seller does not leak Gateway metadata into non-Gateway exact flows
 - paid response unlocks only after settlement
 - settlement status is visible in logs and response metadata
 
-## Facilitator Lock
+## Facilitator Strategy
 
-The facilitator strategy is locked as:
+Recommended facilitator strategy:
 
 - x402.org first for external exact validation on Base Sepolia
 - Thirdweb next for managed external x402 validation once account access is available
 - Circle Gateway for batched nanopayments
 - external exact facilitators where seller requirements support them
-- OmniClaw self-hosted exact facilitator only for proof, custom networks, Arc, and self-hosted enterprise deployments
+- OmniClaw self-hosted exact facilitator for Arc, custom networks, and self-hosted enterprise deployments
 
 Operational split:
 
@@ -76,7 +76,7 @@ Operational split:
 - facilitator verifies and settles
 - buyer policy engine decides whether payment is allowed and which route is selected
 
-Keep these layers separate in deployment docs and product claims.
+Keep these layers separate in deployment docs, system design, and product claims.
 
 ## Current Supported Capabilities
 
@@ -112,8 +112,7 @@ python3 -m py_compile \
 python3 scripts/release_verify.sh
 ```
 
-If you are validating exact-flow pilot coverage, run the current smoke slice after syncing
-dependencies:
+If you are validating exact-flow deployment coverage, run the current smoke slice after syncing dependencies:
 
 ```bash
 uv run pytest \

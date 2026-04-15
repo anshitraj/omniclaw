@@ -53,9 +53,9 @@ OmniClaw is facilitator-agnostic. Production deployments should choose the settl
 - Thirdweb-backed x402 facilitator for managed gas-sponsored exact settlement across broad EVM coverage
 - Circle Gateway `GatewayWalletBatched` for gasless batched nanopayments
 - external standard x402 facilitator where the seller already uses one
-- self-hosted OmniClaw exact facilitator only when local proof, custom network support, or enterprise self-hosting is required
+- self-hosted OmniClaw exact facilitator when local proof, custom network support, or enterprise self-hosting is required
 
-Do not run a self-hosted facilitator by default if a managed facilitator already supports the target flow. The self-hosted path is operational infrastructure, not the primary product wedge.
+Use a self-hosted facilitator when it fits the network and operational model. Use a managed facilitator when it already cleanly supports the target flow.
 
 Before production traffic, validate the exact seller path with:
 

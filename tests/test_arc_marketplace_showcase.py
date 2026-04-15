@@ -44,6 +44,7 @@ def test_arc_marketplace_catalog_uses_arc_exact_profile(monkeypatch):
     assert catalog["asset"] == "0x3600000000000000000000000000000000000000"
     assert catalog["facilitator_url"] == "http://127.0.0.1:4022"
     assert catalog["explorer_base_url"] == "https://testnet.arcscan.app/tx/"
+    assert catalog["buyer_engine_configured"] is False
     assert [product["slug"] for product in catalog["products"]] == [
         "prime-market-scan",
         "risk-oracle-brief",
@@ -62,3 +63,16 @@ def test_arc_marketplace_paid_routes_advertise_arc_exact(monkeypatch):
     assert payment_option.price == "$0.25"
     assert payment_option.network == "eip155:5042002"
     assert payment_option.pay_to == module.PAY_TO
+
+
+def test_arc_marketplace_mini_agent_reports_missing_buyer_engine(monkeypatch):
+    module = _load_showcase_module(monkeypatch)
+
+    with TestClient(module.app) as client:
+        response = client.post("/api/agent/inspect/prime-market-scan")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is False
+    assert body["status_code"] == 503
+    assert "Buyer Financial Policy Engine" in body["error"]

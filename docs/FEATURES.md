@@ -78,9 +78,9 @@ Supported deployment modes:
 - Circle Gateway `GatewayWalletBatched` for gasless nanopayment settlement
 - self-hosted OmniClaw exact facilitator, started with `omniclaw facilitator exact`
 
-Thirdweb is a priority external integration path because it provides broad EVM facilitator coverage and gas-sponsored settlement. OmniClaw adds buyer-side policy, route selection, SDK/CLI execution surfaces, and operator visibility.
+Thirdweb is one supported external integration path for teams that want broad EVM facilitator coverage and gas-sponsored settlement. OmniClaw adds buyer-side policy, route selection, SDK and CLI execution surfaces, and payment visibility on top.
 
-OmniClaw added the self-hosted exact facilitator so teams can support networks and proof environments before they are available through their selected hosted facilitator. This is how Arc Testnet is handled: it remains standard x402 `exact` settlement, with OmniClaw providing the network profile, asset metadata, RPC, and facilitator runtime.
+The self-hosted exact facilitator exists so teams can support networks and deployments before they are available through a hosted provider. Arc Testnet is the clearest example: it remains standard x402 `exact` settlement, with OmniClaw providing the network profile, asset metadata, RPC, and facilitator runtime.
 
 See [facilitators.md](facilitators.md) for deployment details.
 
@@ -116,10 +116,10 @@ The ledger in [ledger/](../src/omniclaw/ledger) tracks payment records and statu
 
 Typical use cases:
 
-- internal observability
+- payment observability
 - transaction lookup
 - reconciliation
-- launch debugging
+- operational debugging
 
 ### Payment Intents
 
