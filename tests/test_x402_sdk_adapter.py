@@ -142,7 +142,50 @@ async def test_execute_returns_failed_final_when_seller_rejects_payment():
 
 
 @pytest.mark.asyncio
-async def test_pay_route_uses_seller_declared_amount_for_url_payments(monkeypatch: pytest.MonkeyPatch):
+async def test_simulate_reports_insufficient_direct_wallet_balance(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    url = "https://seller.example/compute"
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            402,
+            headers={"PAYMENT-REQUIRED": _make_payment_required_header(url)},
+            json={"error": "Payment Required"},
+        )
+
+    adapter = _make_adapter(httpx.MockTransport(handler))
+    monkeypatch.setattr(
+        adapter,
+        "_check_direct_exact_balance",
+        lambda selected_requirements: {
+            "balance_check": "failed",
+            "buyer_address": "0xa6b9b6244A5AD5FC2eF2BEB67ce04b75A0dB91D7",
+            "direct_wallet_balance_atomic": "150000",
+            "direct_wallet_balance": "0.15",
+            "direct_wallet_required_atomic": "250000",
+            "direct_wallet_required": "0.25",
+            "direct_wallet_has_enough": False,
+        },
+    )
+
+    result = await adapter.simulate(
+        wallet_id="buyer-wallet",
+        recipient=url,
+        amount=Decimal("0.25"),
+    )
+
+    assert result["would_succeed"] is False
+    assert result["balance_check"] == "failed"
+    assert result["direct_wallet_balance"] == "0.15"
+    assert result["direct_wallet_required"] == "0.25"
+    assert "needs 0.25 USDC" in result["reason"]
+
+
+@pytest.mark.asyncio
+async def test_pay_route_uses_seller_declared_amount_for_url_payments(
+    monkeypatch: pytest.MonkeyPatch,
+):
     payment_result = PaymentResult(
         success=True,
         transaction_id="tx-2",

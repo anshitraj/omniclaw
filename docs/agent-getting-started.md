@@ -8,9 +8,9 @@ In that system:
 - the owner runs the **Financial Policy Engine**
 - the agent uses `omniclaw-cli` as the **zero-trust execution layer**
 - buyers pay with `omniclaw-cli pay`
-- agents can expose temporary local paid services with `omniclaw-cli serve`
+- agents can expose paid services for other agents or automation with `omniclaw-cli serve`
 
-For vendor, SaaS, or enterprise APIs, use the Python SDK seller middleware instead of `omniclaw-cli serve`. See the [Developer Guide](developer-guide.md).
+For vendor, SaaS, or enterprise APIs embedded directly in an application, use the Python SDK seller middleware instead of `omniclaw-cli serve`. See the [Developer Guide](developer-guide.md).
 
 ---
 
@@ -218,7 +218,7 @@ omniclaw-cli serve \
 
 This opens `http://localhost:8000/api/data` that requires a USDC payment to execute `my_service.py` and return its output.
 
-> **Web developer or vendor:** For real API or SaaS products, use the Python SDK inside your FastAPI application instead of `omniclaw-cli serve`. See the [Developer Guide](developer-guide.md).
+> **Web developer or vendor:** If the paid route lives inside your application, use the Python SDK inside your FastAPI application instead of `omniclaw-cli serve`. Use `serve` when the seller surface itself is agent-run. See the [Developer Guide](developer-guide.md).
 
 ---
 

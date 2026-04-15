@@ -1,26 +1,26 @@
 # ERC-8004 Trust Notes
 
-This file is a historical design note for OmniClaw's trust-layer direction. It is not the canonical API reference and should not be treated as a precise description of the current Financial Policy Engine implementation.
+This document explains how ERC-8004 concepts show up in OmniClaw today.
 
-Use these docs for the current product surface instead:
+It is a trust-layer overview, not the canonical SDK or API reference. For the main product surface, use:
 
 - [README](../README.md)
-- [Developer Guide (SDK)](developer-guide.md)
+- [Developer Guide](developer-guide.md)
 - [API Reference](API_REFERENCE.md)
 - [Architecture and Features](FEATURES.md)
 
-## Current Reality
+## How OmniClaw Uses ERC-8004
 
-OmniClaw already exposes a trust layer through the Financial Policy Engine:
+OmniClaw exposes trust evaluation through the Financial Policy Engine:
 
 - trust checks can run during `pay()` and `simulate()`
 - trust behavior is controlled by `check_trust`
 - explicit trust checks require a real `OMNICLAW_RPC_URL`
 - trust evaluation can approve, hold, or block payment execution
 
-## What This Note Represents
+## What The Trust Layer Covers
 
-The earlier internal design work explored:
+The trust system is built around:
 
 - ERC-8004 identity lookup
 - reputation scoring and weighted trust signals
@@ -28,12 +28,12 @@ The earlier internal design work explored:
 - trust-aware payment execution
 - auditability of trust decisions
 
-Those themes still matter, but the exact content of the original internal draft no longer maps cleanly to the current codebase.
+## Practical Guidance
 
-## Recommendation
+Treat this file as conceptual background.
 
-If this repo keeps evolving quickly, treat trust docs the same way as the rest of the Financial Policy Engine docs:
+Use:
 
-- keep implementation details in code and tests
-- keep user-facing behavior in the API reference and usage guide
-- keep speculative product thinking in the roadmap, not in protocol documentation
+- the SDK and API docs for integration details
+- the code and tests for implementation behavior
+- the roadmap for future trust-layer expansion

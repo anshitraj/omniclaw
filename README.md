@@ -1,67 +1,120 @@
 # OmniClaw
 
-**Policy-controlled payments for AI agents and machine services.**
+*One install. Every payment rail. Policy enforced by default.*
 
 [![CI](https://github.com/omnuron/omniclaw/actions/workflows/ci.yml/badge.svg)](https://github.com/omnuron/omniclaw/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/omniclaw.svg)](https://pypi.org/project/omniclaw/)
 [![Python](https://img.shields.io/pypi/pyversions/omniclaw.svg)](https://pypi.org/project/omniclaw/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-OmniClaw lets software agents pay, earn, and access paid APIs without giving the agent unrestricted wallet authority.
+`lablab.ai Agentic Commerce Hackathon on ARC (1st place) · Top 11 finalist, C.R.I.S.P Agentic AI Ideation Challenge`
 
-The owner runs a **Financial Policy Engine**. Agents and applications execute through constrained interfaces. Every payment is checked against policy before funds move.
+OmniClaw is the control layer for agent money.
 
-## Why It Exists
+It lets teams ship autonomous payments without giving software unrestricted wallet authority.
 
-AI agents can browse, reason, call APIs, and run workflows. The hard part is money movement.
+Wallets give keys. Facilitators settle payments. OmniClaw governs whether an agent is allowed to pay, routes the right rail, and gives vendors and infrastructure teams a usable product around that control model.
 
-OmniClaw solves the control problem:
+Buyers get policy. Vendors get paid endpoints. Infrastructure teams get self-hosted exact settlement on Arc, Base, and Ethereum.
 
-- agents can pay for services without receiving raw wallet control
-- sellers can monetize APIs through x402-compatible payment gates
-- operators can enforce budgets, recipient rules, confirmations, and route selection
-- payments can settle through Circle Gateway, standard x402 exact settlement, or a self-hosted exact facilitator
+## Proven In Public
 
-## Core Surfaces
+- Arc Testnet exact settlement proof: `https://testnet.arcscan.app/tx/0xd40dc800a54bee4ff80da4709e65cfd3d0346eb1995ebc34fba433a6306b9219`
+- 1st place at `lablab.ai Agentic Commerce Hackathon on ARC`
+- Top 11 finalist in the `C.R.I.S.P Agentic AI Ideation Challenge`
+- Shipped buyer CLI, buyer SDK, seller SDK, ERC-8004 trust checks, Circle Gateway nanopayments, and a self-hosted `x402 exact` facilitator runtime
 
-| Surface | Used By | Purpose |
-| --- | --- | --- |
-| Financial Policy Engine | owner / operator | Enforces policy, signs allowed actions, exposes the control API |
-| `omniclaw-cli` | agents / automation | Executes buyer payments through the policy engine without direct key access |
-| Python SDK | developers / vendors | Embeds buyer payments and seller monetization into Python applications |
-| Seller middleware | vendors / enterprises | Turns production HTTP routes into paid x402 endpoints |
-| Exact facilitator | operators | Optional self-hosted x402 exact settlement for supported EVM networks |
+If you want the fastest proof, run:
 
-## Install
+```bash
+bash scripts/start_arc_marketplace_showcase_docker.sh
+```
+
+Then open `http://127.0.0.1:8020` and complete the browser buyer flow.
+
+## Why Teams Use OmniClaw
+
+| If you are... | OmniClaw gives you... |
+| --- | --- |
+| Building an agent buyer | Policy-controlled payments without giving the agent raw wallet authority |
+| Monetizing an API or service | Paid routes through `client.sell(...)` and x402-compatible seller flows |
+| Running payment infrastructure | Route selection across Circle Gateway and standard `x402 exact`, plus self-hosted exact settlement when hosted coverage stops short |
+
+## Pick A Path In 60 Seconds
+
+One product, three adoption paths: autonomous buyers, paid vendors, and self-hosted settlement infrastructure.
+
+| I want to... | Run this first | Success looks like... | Jump to... |
+| --- | --- | --- | --- |
+| Try the full Arc flow now | `bash scripts/start_arc_marketplace_showcase_docker.sh` | browser kiosk + buyer flow + self-hosted exact settlement | [Arc Marketplace Showcase](examples/arc-marketplace-showcase/README.md) |
+| Let an agent buy from paid APIs | `omniclaw server` + `omniclaw-cli pay` | agent pays through policy, not a raw key | [Buyer: Agent CLI](#buyer-agent-cli) |
+| Pay programmatically from Python | `OmniClaw().pay(...)` | Python service buys from paid APIs | [Buyer: Python SDK](#buyer-python-sdk) |
+| Monetize a vendor API | `OmniClaw().sell(...)` | FastAPI route returns `402` until paid | [Seller: Vendor / Enterprise SDK](#seller-vendor--enterprise-sdk) |
+| Run your own exact facilitator | `omniclaw facilitator exact` | self-hosted `verify` / `settle` on supported EVM networks | [Self-Hosted Exact Facilitator](#self-hosted-exact-facilitator) |
+
+## The Problem
+
+AI agents can browse, reason, call APIs, and execute workflows autonomously.
+
+The dangerous part is money.
+
+Give an agent a private key and a single hallucination, prompt injection, or bad tool call can drain a treasury in seconds. Existing solutions usually hand the agent a wallet and hope for the best.
+
+OmniClaw solves this by separating authority from execution. The owner defines policy. The agent executes within it. Every payment is checked before funds move.
+
+In one sentence: OmniClaw is the economic execution and control layer for agentic systems.
+
+## Prerequisites
+
+| Path | What you need |
+| --- | --- |
+| Arc showcase | Docker |
+| Buyer CLI | Python 3.11+, funded EVM key, RPC URL |
+| Buyer SDK | Python 3.11+, RPC URL |
+| Seller SDK | Python 3.11+, optional Circle credentials for Gateway flows |
+| Self-hosted facilitator | Python 3.11+, funded EVM key, RPC URL |
+
+## Install And Run
 
 ```bash
 pip install omniclaw
 ```
 
-For local development:
+Package development:
 
 ```bash
 uv add omniclaw
 ```
 
-## Choose The Right Path
+## Wallets vs Facilitators vs OmniClaw
 
-| If you are building... | Use... | Why |
+| Layer | What it does | What it does not do |
 | --- | --- | --- |
-| An agent that needs to buy services | Financial Policy Engine + `omniclaw-cli` | The agent can pay without holding raw wallet authority |
-| A backend service that buys from paid APIs | Python SDK `client.pay(...)` | Programmatic payments inside your own app |
-| A vendor or enterprise API | Python SDK `client.sell(...)` | Production paid endpoints inside your application |
-| A temporary local paid agent service | `omniclaw-cli serve` | Fast agent-owned/local monetization, not the enterprise seller path |
-| Custom or Arc exact settlement infrastructure | `omniclaw facilitator exact` | Self-hosted standard x402 `verify` / `settle` |
+| Wallets | Hold keys and sign | Decide whether an agent should be allowed to spend |
+| Facilitators | Verify and settle supported payment payloads | Govern financial authority before money moves |
+| OmniClaw | Enforces policy before payment, routes the right rail, supports buyer and seller flows, and can self-host exact settlement when needed | Replace every settlement provider or blockchain rail |
+
+OmniClaw is a policy-controlled payment layer for agents and vendors. It lets agents pay through approved rails, lets vendors monetize routes, and lets infrastructure teams run or self-host settlement when hosted facilitators stop short.
+
+Core shipped surfaces:
+
+- Financial Policy Engine for payment authority, limits, approvals, trust checks, and execution control
+- `omniclaw-cli` for agent-side buyer execution
+- Python SDK for buyer payments and seller monetization
+- Circle Gateway nanopayments for gasless microflows
+- Standard `x402 exact` buyer flow with direct-wallet signing
+- Self-hosted `x402 exact` facilitator for Arc Testnet, Base Sepolia, Ethereum Sepolia, Base mainnet, and Ethereum mainnet
+
+> OmniClaw governs financial authority. Facilitators settle supported x402 payment payloads. These are separate concerns.
 
 ## Credential Model
 
 OmniClaw has two different key surfaces:
 
-- `OMNICLAW_PRIVATE_KEY` is the EOA key used for direct x402 exact settlement and Circle Gateway nanopayment signing.
+- `OMNICLAW_PRIVATE_KEY` is the EOA key used for direct `x402 exact` settlement and Circle Gateway nanopayment signing.
 - `ENTITY_SECRET` is Circle's developer-controlled wallet encryption secret.
 
-If your Circle account/API key already has an Entity Secret, set it directly. Circle allows one active Entity Secret per account/API key. OmniClaw only auto-generates and registers a new one when no existing secret is provided or found in its managed local credential store.
+If your Circle account or API key already has an Entity Secret, set it directly. Circle allows one active Entity Secret per account and API key. OmniClaw only auto-generates and registers a new one when no existing secret is provided or found in its managed local credential store.
 
 ```bash
 export CIRCLE_API_KEY="..."
@@ -75,11 +128,18 @@ For a non-interactive local setup:
 omniclaw setup --api-key "$CIRCLE_API_KEY" --entity-secret "$ENTITY_SECRET"
 ```
 
+## Default Product Shapes
+
+- Agent buyer: run the Financial Policy Engine, then pay with `omniclaw-cli`
+- Application buyer: integrate `client.pay(...)` in Python
+- Vendor seller: monetize routes with `client.sell(...)`
+- Infrastructure operator: run `omniclaw facilitator exact` for self-hosted exact settlement
+
 ## Buyer: Agent CLI
 
-Use this when an autonomous agent or script should pay through the **Financial Policy Engine** (run via the `omniclaw server` command).
+Use this when an autonomous agent or script should pay through the Financial Policy Engine.
 
-Start the owner-side policy engine:
+Start the policy engine:
 
 ```bash
 export OMNICLAW_PRIVATE_KEY="0x..."
@@ -116,6 +176,8 @@ omniclaw-cli pay \
   --idempotency-key job-123
 ```
 
+The same CLI surface can also inspect balances, ledger entries, and paid endpoint requirements without exposing private keys to the agent.
+
 ## Buyer: Python SDK
 
 Use this when a Python service should pay programmatically.
@@ -131,12 +193,15 @@ result = await client.pay(
     amount="1.00",
     purpose="compute job",
     idempotency_key="job-123",
+    check_trust=True,
 )
 
 print(result.status, result.blockchain_tx or result.transaction_id)
 ```
 
 For x402 URLs, `amount` acts as the maximum spend allowed for that request. The seller's x402 requirements define the exact amount to settle.
+
+When trust is enabled, OmniClaw can evaluate ERC-8004 identity and reputation signals before the payment is allowed to proceed.
 
 ## Seller: Vendor / Enterprise SDK
 
@@ -162,64 +227,128 @@ async def premium_data(
 
 The route returns `402 Payment Required` until the buyer submits a valid x402 payment. After verification and settlement, the handler executes and returns the paid response.
 
-## Seller: Agent-Owned Local Service
+`omniclaw-cli serve` remains the agent-facing seller/runtime surface. Use it when an agent needs to expose a paid endpoint for other agents or automation. Use the SDK seller path when a vendor or enterprise team is embedding paid routes directly into an application.
 
-Use this only when an agent or local automation wants to expose a temporary paid service. It is not the recommended integration path for vendor or enterprise APIs.
+## Self-Hosted Exact Facilitator
+
+Hosted facilitators do not support every chain, every flow, or every developer workflow. Some require managed accounts, signup gates, or hosted onboarding before you can even run a demo.
+
+OmniClaw ships a self-hosted `x402 exact` facilitator so you can run standard `verify` and `settle` yourself.
+
+What it does:
+
+- runs a standard `x402 exact` facilitator runtime
+- verifies signed payment payloads
+- settles payments on supported EVM profiles
+- removes dependency on hosted onboarding for unsupported flows
+
+Supported out of the box:
+
+- Arc Testnet
+- Base Sepolia
+- Ethereum Sepolia
+- Base mainnet
+- Ethereum mainnet
+
+Start it with one command:
 
 ```bash
-omniclaw-cli serve \
-  --price 0.25 \
-  --endpoint /compute \
-  --exec "python compute_job.py" \
-  --port 8000
+omniclaw facilitator exact --network-profile ARC-TESTNET --port 4022
 ```
 
-For vendor and enterprise APIs, use the Python SDK middleware so payments are part of the application itself.
+Or use the helper script:
 
-## Settlement Paths
+```bash
+bash scripts/start_arc_exact_facilitator.sh
+```
 
-OmniClaw is settlement-rail aware and policy-first. The buyer uses one execution path while the seller advertises the x402 requirements it supports.
+Arc Testnet notes:
 
-| Path | Status | Notes |
-| --- | --- | --- |
-| Circle Gateway `GatewayWalletBatched` | supported | Gasless nanopayments through Circle Gateway |
-| Standard x402 exact via x402.org | supported (Base Sepolia) | External exact facilitator validation |
-| OmniClaw self-hosted exact facilitator | supported (Arc Testnet) | Self-hosted `verify` and `settle` for supported EVM profiles |
-| Thirdweb x402 HTTP facilitator | supported | Managed Thirdweb account required |
+- Arc Testnet uses native USDC for gas
+- the exact settlement path calls Arc USDC `transferWithAuthorization`
+- the result is visible on ArcScan like any other on-chain proof
 
-Current capabilities:
+Latest public Arc proof transaction:
 
-- Base Sepolia external x402 exact settlement
-- Arc Testnet self-hosted exact settlement
-- buyer/seller wallet separation
-- policy-controlled buyer route through `/api/v1/pay`
+```text
+https://testnet.arcscan.app/tx/0xd40dc800a54bee4ff80da4709e65cfd3d0346eb1995ebc34fba433a6306b9219
+```
+
+Full Arc marketplace showcase:
+
+```bash
+bash scripts/start_arc_marketplace_showcase_docker.sh
+```
+
+That launcher starts the vendor kiosk, buyer policy engine, and self-hosted facilitator together so the entire buyer-to-seller flow can be demonstrated from one browser page.
 
 ## Examples
 
 | Example | Demonstrates |
 | --- | --- |
-| [B2B SDK Integration](examples/b2b-sdk-integration/README.md) | Enterprise buyer/seller SDK integration with multiple facilitators |
+| [B2B SDK Integration](examples/b2b-sdk-integration/README.md) | Enterprise buyer and seller SDK integration with multiple facilitators |
 | [Machine to Machine](examples/machine-to-machine/README.md) | One machine service paying another |
 | [Machine to Vendor](examples/machine-to-vendor/README.md) | Agent buyer paying a vendor-owned API |
 | [Vendor Integration](examples/vendor-integration/README.md) | Vendor-side paid API integration |
 | [Business Compute](examples/business-compute/README.md) | Payment-gated compute service |
-| [Local Economy](examples/local-economy/README.md) | Local buyer/seller economy with Docker |
+| [Local Economy](examples/local-economy/README.md) | Local buyer and seller economy with Docker |
 | [External x402 Facilitator](examples/external-x402-facilitator/README.md) | x402.org Base Sepolia validation |
 | [Thirdweb HTTP Facilitator](examples/thirdweb-http-facilitator/README.md) | Thirdweb HTTP API validation |
+| [Arc Marketplace Showcase](examples/arc-marketplace-showcase/README.md) | Visual vendor kiosk with Arc Testnet x402 exact settlement |
+
+## Architecture
+
+```mermaid
+flowchart TD
+    A[Agent / CLI / App] --> B[Financial Policy Engine]
+    B --> B1[Guards]
+    B --> B2[ERC-8004 Trust Gate]
+    B --> B3[Ledger]
+    B --> B4[Fund Locks]
+    B --> B5[Payment Router]
+    B5 --> C1[Circle Gateway Nanopayments]
+    B5 --> C2[x402 Exact]
+    B5 --> C3[Self-Hosted Facilitator Runtime]
+    C1 --> D[Blockchain / Settlement Network]
+    C2 --> D
+    C3 --> D
+    D --> E[Arc / Base / Ethereum / Other Supported Rails]
+```
+
+## Execution Pipeline
+
+Every `client.pay()` call runs through:
+
+1. Argument validation
+2. Trust evaluation when enabled
+3. Ledger entry creation
+4. Guard reservation
+5. Wallet fund lock acquisition
+6. Balance verification after reservations
+7. Router and adapter selection
+8. Guard commit or release
+9. Ledger status update
+10. Wallet lock release
+
+This is why OmniClaw is not just a thin wallet wrapper. The payment call is a controlled execution pipeline, not a raw transfer helper.
 
 ## Documentation
 
 | Start Here | Use Case |
 | --- | --- |
 | [Documentation Index](docs/README.md) | Complete docs map |
+| [Architecture and Features](docs/FEATURES.md) | Financial Policy Engine design and subsystem responsibilities |
 | [Developer Guide](docs/developer-guide.md) | Python SDK buyer and seller integration |
 | [Agent Getting Started](docs/agent-getting-started.md) | Agent CLI setup and usage |
 | [CLI Reference](docs/cli-reference.md) | Generated `omniclaw-cli` reference |
-| [Operator CLI](docs/operator-cli.md) | `omniclaw server`, setup, policy, facilitator commands |
+| [Operator CLI](docs/operator-cli.md) | `omniclaw server`, setup, policy, and facilitator commands |
 | [Policy Reference](docs/POLICY_REFERENCE.md) | Policy file structure and controls |
 | [Facilitators](docs/facilitators.md) | x402 facilitator model and deployment paths |
 | [Production Readiness](docs/production-readiness.md) | Proof status and release checklist |
 | [API Reference](docs/API_REFERENCE.md) | Python SDK and API details |
+| [ERC-8004 Trust Notes](docs/erc_804_spec.md) | Trust-layer notes and registry framing |
+
+[Star history](https://star-history.com/#omnuron/omniclaw&Date)
 
 ## Development
 
@@ -236,7 +365,7 @@ Release verification:
 
 ## Security
 
-OmniClaw is designed around separation of authority: agents do not need unrestricted wallet access. Production deployments should still use restricted keys, policy limits, confirmation thresholds, hardened secrets, and audited infrastructure.
+OmniClaw is designed around separation of authority. Agents do not need unrestricted wallet access. Production deployments should still use restricted keys, policy limits, confirmation thresholds, hardened secrets, audited infrastructure, and real operational review.
 
 Report vulnerabilities through [SECURITY.md](SECURITY.md).
 

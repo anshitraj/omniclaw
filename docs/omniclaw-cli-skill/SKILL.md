@@ -3,7 +3,7 @@ name: omniclaw
 description: >
   Use this skill whenever an agent needs to pay for an x402 URL, transfer USDC
   to an address, inspect OmniClaw balances or ledger entries, or expose a
-  temporary agent-owned paid service with omniclaw-cli serve. OmniClaw is the
+  paid endpoint for other agents or automation with omniclaw-cli serve. OmniClaw is the
   Economic Execution and Control Layer for Agentic Systems. The CLI is the
   zero-trust execution layer for agents. Use this skill for the CLI execution
   path only, not for vendor SDK integration, owner setup, policy editing, wallet
@@ -31,7 +31,7 @@ Use `omniclaw-cli` only when the task is directly about one of these actions:
 - transfer USDC to an address
 - inspect wallet, Gateway, or Circle balances
 - inspect transaction history
-- expose a temporary agent-owned paid endpoint with `serve`
+- expose a paid endpoint for other agents or automation with `serve`
 
 Do not use this skill for:
 
@@ -55,7 +55,7 @@ This skill is specifically about the CLI execution surface.
 The same CLI has two agent-side economic roles:
 
 - buyer role: `omniclaw-cli pay`
-- temporary/local seller role: `omniclaw-cli serve`
+- seller role for agent-run paid endpoints: `omniclaw-cli serve`
 
 Vendor and enterprise seller APIs should use the Python SDK with `client.sell(...)`, not this CLI skill.
 
@@ -105,7 +105,7 @@ Do not invent or search for them yourself.
 1. Use `omniclaw-cli pay --recipient <0xaddress> --amount <usdc>`.
 2. Always include `--purpose`.
 
-### For agent-owned local seller tasks
+### For agent-run seller tasks
 
 1. Inspect current state with `balance-detail`.
 2. Start the paid endpoint with `omniclaw-cli serve`.

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
-from types import SimpleNamespace
-
 from fastapi.testclient import TestClient
 
-from omniclaw.facilitator.exact import ExactFacilitatorConfig, create_exact_facilitator_app
+from omniclaw.facilitator.exact import (
+    ExactFacilitatorConfig,
+    _normalize_tx_hash,
+    create_exact_facilitator_app,
+)
 
 
 class _FakeResult:
@@ -24,6 +26,11 @@ class _FakeFacilitator:
 
     async def settle(self, payload, requirements):
         return _FakeResult({"success": True, "transaction": "0xsettled"})
+
+
+def test_normalize_tx_hash_adds_prefix_when_missing():
+    assert _normalize_tx_hash("abc123") == "0xabc123"
+    assert _normalize_tx_hash("0xabc123") == "0xabc123"
 
 
 def test_create_exact_facilitator_app_registers_networks():

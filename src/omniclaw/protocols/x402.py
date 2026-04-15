@@ -476,6 +476,15 @@ class X402Adapter(ProtocolAdapter):
         except Exception:
             return response.text
 
+    @staticmethod
+    def _requirement_value(requirements: Any, *names: str) -> Any:
+        for name in names:
+            if isinstance(requirements, dict) and name in requirements:
+                return requirements[name]
+            if hasattr(requirements, name):
+                return getattr(requirements, name)
+        return None
+
     def _resolve_agent_network(
         self,
         wallet_id: str,
@@ -534,6 +543,99 @@ class X402Adapter(ProtocolAdapter):
 
         x402_client.on_after_payment_creation(_capture_selection)
         return x402HTTPClient(x402_client), selection_state
+
+    def _resolve_exact_balance_rpc_url(self, selected_network: Network | None) -> str | None:
+        config_rpc_url = getattr(self._config, "rpc_url", None)
+        config_network = _resolve_network(str(getattr(self._config, "network", "") or ""))
+        if config_rpc_url and (selected_network is None or config_network == selected_network):
+            return str(config_rpc_url)
+
+        if selected_network is None:
+            return str(config_rpc_url) if config_rpc_url else None
+
+        try:
+            from omniclaw.facilitator.networks import resolve_exact_settlement_network_profile
+
+            profile = resolve_exact_settlement_network_profile(selected_network)
+            return profile.default_rpc_url
+        except Exception:
+            return str(config_rpc_url) if config_rpc_url else None
+
+    def _check_direct_exact_balance(self, selected_requirements: Any) -> dict[str, Any]:
+        """
+        Best-effort direct-wallet token balance check for x402 exact payments.
+
+        This is used by simulate/inspect only. It prevents readiness reports from
+        claiming a buyer is ready when the signer can produce a payload but the
+        wallet cannot actually settle the selected requirement.
+        """
+        if os.environ.get("OMNICLAW_X402_BALANCE_CHECK", "true").lower() in {
+            "0",
+            "false",
+            "no",
+            "off",
+        }:
+            return {"balance_check": "skipped", "balance_check_reason": "disabled"}
+
+        network_value = str(self._requirement_value(selected_requirements, "network") or "")
+        asset = self._requirement_value(selected_requirements, "asset")
+        amount_value = self._requirement_value(selected_requirements, "amount")
+        selected_network = _resolve_network(network_value)
+        if not selected_network or not asset or amount_value is None:
+            return {
+                "balance_check": "skipped",
+                "balance_check_reason": "missing selected network, asset, or amount",
+            }
+
+        rpc_url = self._resolve_exact_balance_rpc_url(selected_network)
+        if not rpc_url:
+            return {
+                "balance_check": "skipped",
+                "balance_check_reason": f"no RPC URL configured for {network_value}",
+            }
+
+        try:
+            private_key = self._get_generic_x402_private_key()
+
+            from eth_account import Account
+            from web3 import Web3
+
+            account = Account.from_key(private_key)
+            w3 = Web3(Web3.HTTPProvider(rpc_url, request_kwargs={"timeout": 5}))
+            token = w3.eth.contract(
+                address=Web3.to_checksum_address(str(asset)),
+                abi=[
+                    {
+                        "inputs": [{"name": "account", "type": "address"}],
+                        "name": "balanceOf",
+                        "outputs": [{"type": "uint256"}],
+                        "stateMutability": "view",
+                        "type": "function",
+                    }
+                ],
+            )
+            balance_atomic = int(
+                token.functions.balanceOf(Web3.to_checksum_address(account.address)).call()
+            )
+            required_atomic = int(str(amount_value))
+            balance_decimal = self._atomic_to_decimal(str(balance_atomic))
+            required_decimal = self._atomic_to_decimal(str(required_atomic))
+            has_enough = balance_atomic >= required_atomic
+            return {
+                "balance_check": "passed" if has_enough else "failed",
+                "buyer_address": account.address,
+                "direct_wallet_balance_atomic": str(balance_atomic),
+                "direct_wallet_balance": str(balance_decimal),
+                "direct_wallet_required_atomic": str(required_atomic),
+                "direct_wallet_required": str(required_decimal),
+                "direct_wallet_has_enough": has_enough,
+                "direct_wallet_rpc_url": rpc_url,
+            }
+        except Exception as exc:
+            return {
+                "balance_check": "skipped",
+                "balance_check_reason": f"balance read failed: {exc}",
+            }
 
     async def execute(
         self,
@@ -784,10 +886,27 @@ class X402Adapter(ProtocolAdapter):
             result["payment_network"] = str(selected_requirements.network)
             result["payment_asset"] = str(selected_requirements.asset)
             result["scheme"] = str(selected_requirements.scheme)
-            result["reason"] = (
-                "Buyer can create a valid x402 payment payload. "
-                "Execution still depends on seller-side settlement and on-chain balance."
-            )
+            balance_check = self._check_direct_exact_balance(selected_requirements)
+            result.update(balance_check)
+            if balance_check.get("balance_check") == "failed":
+                result["would_succeed"] = False
+                result["reason"] = (
+                    "Buyer can create a valid x402 payment payload, but the direct wallet "
+                    f"has {balance_check.get('direct_wallet_balance')} USDC and needs "
+                    f"{balance_check.get('direct_wallet_required')} USDC on "
+                    f"{selected_requirements.network}."
+                )
+            elif balance_check.get("balance_check") == "passed":
+                result["reason"] = (
+                    "Buyer can create a valid x402 payment payload and has enough direct "
+                    "wallet USDC for the selected requirement."
+                )
+            else:
+                result["reason"] = (
+                    "Buyer can create a valid x402 payment payload. "
+                    "Direct wallet balance check was skipped; execution still depends on "
+                    "seller-side settlement and on-chain balance."
+                )
 
         except Exception as e:
             result["would_succeed"] = False

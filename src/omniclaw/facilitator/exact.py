@@ -36,6 +36,11 @@ def _required_env(*names: str) -> str:
     raise RuntimeError(f"Missing required environment variable. Set one of: {missing}")
 
 
+def _normalize_tx_hash(tx_hash: Any) -> str:
+    value = tx_hash.hex() if hasattr(tx_hash, "hex") else str(tx_hash)
+    return value if value.startswith("0x") else f"0x{value}"
+
+
 @dataclass(frozen=True)
 class ExactFacilitatorConfig:
     private_key: str
@@ -74,7 +79,7 @@ class CompatFacilitatorWeb3Signer(FacilitatorWeb3Signer):
         )
         signed_tx = self._account.sign_transaction(tx)
         tx_hash = self._w3.eth.send_raw_transaction(get_signed_raw_transaction_bytes(signed_tx))
-        return tx_hash.hex()
+        return _normalize_tx_hash(tx_hash)
 
     def send_transaction(self, to: str, data: bytes) -> str:
         from web3 import Web3
@@ -89,7 +94,7 @@ class CompatFacilitatorWeb3Signer(FacilitatorWeb3Signer):
         }
         signed_tx = self._account.sign_transaction(tx)
         tx_hash = self._w3.eth.send_raw_transaction(get_signed_raw_transaction_bytes(signed_tx))
-        return tx_hash.hex()
+        return _normalize_tx_hash(tx_hash)
 
 
 class FacilitatorRequest(BaseModel):

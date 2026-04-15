@@ -19,7 +19,7 @@ That full system is larger than the CLI alone:
 It is the same CLI for agent-side economic execution:
 
 - buyer side: `omniclaw-cli pay`
-- temporary/local seller side: `omniclaw-cli serve`
+- seller side for agent-run paid endpoints: `omniclaw-cli serve`
 
 Vendor and enterprise seller APIs should use the Python SDK with `client.sell(...)`.
 

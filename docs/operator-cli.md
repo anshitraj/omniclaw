@@ -2,10 +2,10 @@
 
 OmniClaw ships two command surfaces:
 
-- `omniclaw` for owner/operator infrastructure
+- `omniclaw` for infrastructure and control-plane services
 - `omniclaw-cli` for agent-side financial execution
 
-Use `omniclaw` when you are running infrastructure:
+Use `omniclaw` when you are running the policy engine, setup flow, or facilitator infrastructure:
 
 ```bash
 omniclaw setup --api-key "$CIRCLE_API_KEY" --entity-secret "$ENTITY_SECRET"
@@ -27,11 +27,11 @@ omniclaw-cli pay --recipient https://seller.example.com/compute --idempotency-ke
 omniclaw-cli serve --price 0.01 --endpoint /api/data --exec "python app.py"
 ```
 
-`omniclaw-cli serve` is for agent-owned or local paid services. Vendor and enterprise APIs should use the Python SDK seller middleware (`client.sell(...)`) inside the application.
+`omniclaw-cli serve` is the agent-facing seller surface. Use it when an agent needs to expose a paid endpoint for other agents or automation. Vendor and enterprise APIs that live inside application code should use the Python SDK seller middleware (`client.sell(...)`) instead.
 
 ## Responsibility Split
 
-The operator CLI manages trusted infrastructure and configuration. The agent CLI executes through the Financial Policy Engine and never needs raw owner authority.
+The infrastructure CLI manages trusted configuration and settlement services. The agent CLI executes through the Financial Policy Engine and never needs raw wallet authority.
 
 This split is central to OmniClaw:
 
