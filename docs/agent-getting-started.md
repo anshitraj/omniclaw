@@ -1,6 +1,6 @@
 # OmniClaw Agent Getting Started
 
-This guide walks you through setting up an OmniClaw agent for both buying and selling.
+This guide walks you through setting up an OmniClaw agent for policy-controlled payments.
 
 OmniClaw is the **Economic Execution and Control Layer for Agentic Systems**.
 In that system:
@@ -8,7 +8,9 @@ In that system:
 - the owner runs the **Financial Policy Engine**
 - the agent uses `omniclaw-cli` as the **zero-trust execution layer**
 - buyers pay with `omniclaw-cli pay`
-- sellers earn with `omniclaw-cli serve`
+- agents can expose paid services for other agents or automation with `omniclaw-cli serve`
+
+For vendor, SaaS, or enterprise APIs embedded directly in an application, use the Python SDK seller middleware instead of `omniclaw-cli serve`. See the [Developer Guide](developer-guide.md).
 
 ---
 
@@ -16,6 +18,7 @@ In that system:
 
 - Python 3.10+
 - Circle API key
+- Circle Entity Secret if your Circle account/API key already has one
 - USDC on the target network (testnet or mainnet)
 - A private key for your agent
 
@@ -68,6 +71,10 @@ export OMNICLAW_AGENT_TOKEN="my-agent-token"   # Must match policy.json token ke
 export OMNICLAW_AGENT_POLICY_PATH="/path/to/policy.json"
 export CIRCLE_API_KEY="your-circle-api-key"
 
+# Required when your Circle account/API key already has an Entity Secret.
+# If omitted, OmniClaw only auto-generates one when no existing local secret is found.
+export ENTITY_SECRET="your-existing-64-char-hex-entity-secret"
+
 # Network (testnet or mainnet)
 export OMNICLAW_NETWORK="ETH-SEPOLIA"         # or ETH-MAINNET for production
 
@@ -85,7 +92,7 @@ export OMNICLAW_POLICY_RELOAD_INTERVAL="5"     # Hot reload interval (seconds)
 ## Step 3: Start the Financial Policy Engine
 
 ```bash
-uvicorn omniclaw.agent.server:app --port 8080
+omniclaw server --port 8080
 ```
 
 The Financial Policy Engine runs at `http://localhost:8080`.
@@ -134,13 +141,38 @@ omniclaw-cli balance_detail
 ```bash
 omniclaw-cli deposit --amount 10
 ```
-This moves USDC from your EOA to the Circle Gateway contract.
+This moves USDC from your EOA to the Circle Gateway contract. It is required for `GatewayWalletBatched` nanopayments. It is not required for standard x402 `exact` payments that spend from the buyer signer directly.
 
 ### Withdraw to Circle Wallet
 ```bash
 omniclaw-cli withdraw --amount 5
 ```
 This moves USDC from Gateway to your Circle Developer Wallet.
+
+### Buyer Flow For x402 Services
+
+For a new paid URL, use this order:
+
+```bash
+omniclaw-cli can-pay --recipient https://seller.example.com/premium
+omniclaw-cli inspect-x402 --recipient https://seller.example.com/premium
+omniclaw-cli pay --recipient https://seller.example.com/premium --idempotency-key job-123
+```
+
+What this tells you:
+
+- `can-pay` confirms policy allow or deny
+- `inspect-x402` shows whether the seller is paywalled, what schemes it advertises, and whether OmniClaw will use `gateway_balance` or `direct_wallet`
+- `pay` executes through the single `/api/v1/pay` buyer route
+
+For x402 URLs, OmniClaw chooses the route from the seller's advertised requirements:
+
+- `GatewayWalletBatched` when the seller advertises Circle Gateway nanopayments and the buyer is actually Gateway-ready
+- `exact` when the seller advertises a standard x402 payment flow
+
+If the seller advertises both and the buyer has no Gateway balance, OmniClaw uses `exact`.
+
+If the seller is exact-only, OmniClaw routes directly to the x402 exact path.
 
 ---
 
@@ -172,9 +204,9 @@ Then retry the payment with the same `confirmation_id` in metadata:
 
 ---
 
-## For SELLERS: Expose a Payment Gate
+## Agent-to-Agent Selling (Local Data)
 
-To receive payments, expose a service behind x402 payment:
+If an agent wants to temporarily sell access to a local Python script or data file to another agent, they can use the CLI to spin up a fast payment gate:
 
 ```bash
 omniclaw-cli serve \
@@ -184,13 +216,9 @@ omniclaw-cli serve \
   --port 8000
 ```
 
-This opens `http://localhost:8000/api/data` that requires USDC payment to access.
+This opens `http://localhost:8000/api/data` that requires a USDC payment to execute `my_service.py` and return its output.
 
-This is the seller side of the same OmniClaw economy.
-The same CLI powers both sides:
-
-- buyer: `omniclaw-cli pay`
-- seller: `omniclaw-cli serve`
+> **Web developer or vendor:** If the paid route lives inside your application, use the Python SDK inside your FastAPI application instead of `omniclaw-cli serve`. Use `serve` when the seller surface itself is agent-run. See the [Developer Guide](developer-guide.md).
 
 ---
 
@@ -204,7 +232,9 @@ The same CLI powers both sides:
 | `omniclaw-cli withdraw --amount X` | Withdraw to Circle wallet |
 | `omniclaw-cli withdraw_trustless --amount X` | Trustless withdraw (~7-day delay) |
 | `omniclaw-cli withdraw_trustless_complete` | Complete trustless withdraw after delay |
+| `omniclaw-cli inspect-x402 --recipient URL` | Inspect seller requirements and buyer readiness |
 | `omniclaw-cli pay --recipient 0x... --amount X` | Pay another agent |
+| `omniclaw-cli pay --recipient URL` | Pay a seller x402 endpoint |
 | `omniclaw-cli serve --price X --endpoint /api --exec "cmd"` | Start payment gate |
 
 ---
@@ -231,7 +261,16 @@ Wait a few seconds and retry. The agent is setting up.
 Check that `OMNICLAW_AGENT_TOKEN` matches a key in your policy.json's `tokens` section.
 
 ### "Insufficient balance"
-Make sure you've deposited USDC to the Gateway first:
+Check which route the seller requires:
+
+```bash
+omniclaw-cli inspect-x402 --recipient https://seller.example.com/premium
+```
+
+If the route is `GatewayWalletBatched`, deposit to Gateway first:
+
 ```bash
 omniclaw-cli deposit --amount 10
 ```
+
+If the route is `exact`, fund the buyer signer wallet on the required chain instead.

@@ -3,6 +3,7 @@
 
 .env
 .env.*
+!.env.example
 .env.local
 *.pem
 *.key
@@ -46,8 +47,10 @@ tmp/
 .runtime/
 output/doc/
 
-# Internal docs / GTM materials
-docs/internal/
+# Private operating workspace
+# Keep the root internal workspace out of git.
+internal/
+.agents/
 
 # OS
 Thumbs.db

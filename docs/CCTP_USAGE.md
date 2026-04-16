@@ -48,7 +48,7 @@ sim = await client.simulate(
 - Cross-chain flows depend on the source and destination networks being supported by the configured gateway/CCTP path.
 - Same-chain transfers should not specify a different `destination_chain`.
 - Use `wait_for_completion=True` only when the caller is prepared to block for provider-side polling.
-- For launch usage, verify network support with Circle’s current chain support before relying on a pair in production.
+- Before production use, verify network support with Circle’s current chain support before relying on a pair in production.
 
 ## Result Metadata
 

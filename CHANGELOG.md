@@ -4,6 +4,24 @@ All notable changes to OmniClaw are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [0.0.6] - 2026-04-14
+
+### Added
+- Added the owner/operator `omniclaw facilitator exact` command for self-hosted x402 exact settlement.
+- Added public facilitator documentation covering Circle Gateway, external facilitators, and OmniClaw self-hosted exact settlement.
+- Added Arc Testnet exact-settlement support documentation using CAIP-2 `eip155:5042002`.
+- Added B2B SDK examples for vendor APIs, machine-to-vendor payments, external exact facilitators, and self-hosted exact settlement.
+- Added a public `.env.example` with role-based configuration for agents, vendors, facilitators, Circle Gateway, Thirdweb, and production hardening.
+
+### Changed
+- Moved the owner/operator CLI entrypoint to `omniclaw.admin_cli:main` so it no longer conflicts with the `omniclaw.cli` agent CLI package.
+- Updated release artifact verification for the new admin CLI module and package layout.
+- Reworked public README and docs around agent buyer, SDK buyer, vendor SDK seller, Financial Policy Engine, and facilitator deployment paths.
+- Updated the OmniClaw CLI skill to require idempotency keys for x402 URL payments.
+- Bumped runtime and shipped CLI skill metadata to `0.0.6`.
+
 ## [0.0.5] - 2026-04-04
 
 ### Fixed

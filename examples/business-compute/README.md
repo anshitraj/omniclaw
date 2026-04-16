@@ -28,6 +28,24 @@ From the repo root:
 bash scripts/start_business_compute_demo.sh
 ```
 
+## Arc Vendor Mode
+
+For the shipped Arc-specific flow, use:
+
+```bash
+bash scripts/start_arc_vendor_demo.sh
+```
+
+This mode is different from the older local demo in one important way:
+
+- the buyer is not a bundled local test button
+- the buyer is your real external CLI agent, for example Telegram/OpenClaw
+- the launcher deploys the buyer policy engine and seller policy engine
+- the browser app acts as the vendor-facing seller surface
+- `ARC-TESTNET` is the default network
+
+The launcher prints the buyer policy engine details you need to configure the external CLI agent.
+
 Open in the browser:
 
 ```text
@@ -98,3 +116,10 @@ This example is intentionally business-first.
 
 The business is not presented as another agent using `omniclaw-cli`.
 The business owns the API surface, while OmniClaw provides the payment and control layer underneath.
+
+In Arc vendor mode:
+
+- the buyer uses `omniclaw-cli` externally
+- the seller is a vendor web app
+- both policy engines run on `ARC-TESTNET`
+- the business app shows the payment flow, deliveries, and settlement visibility

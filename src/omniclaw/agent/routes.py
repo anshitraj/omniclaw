@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 from decimal import Decimal
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -25,12 +25,14 @@ from omniclaw.agent.models import (
     SimulateResponse,
     TransactionInfo,
     WalletInfo,
-    X402PayRequest,
+    X402InspectRequest,
+    X402InspectResponse,
     X402RequirementsRequest,
     X402VerifyRequest,
 )
 from omniclaw.agent.policy import PolicyManager, WalletManager
 from omniclaw.core.logging import get_logger
+from omniclaw.core.types import PaymentMethod
 from omniclaw.guards.confirmations import ConfirmationStore
 from omniclaw.ledger import LedgerEntry, LedgerEntryStatus, LedgerEntryType
 
@@ -47,6 +49,195 @@ def _fmt_amount(value: object) -> str:
         return f"{Decimal(str(value)).quantize(Decimal('0.01'))}"
     except Exception:
         return str(value)
+
+
+def _find_adapter_by_method(client: OmniClaw, method: PaymentMethod | str):
+    for adapter in client._router.get_adapters():
+        adapter_method = getattr(adapter, "method", None)
+        adapter_value = adapter_method.value if hasattr(adapter_method, "value") else adapter_method
+        target_value = method.value if hasattr(method, "value") else method
+        if adapter_value == target_value:
+            return adapter
+    return None
+
+
+async def _choose_x402_route(
+    *,
+    client: OmniClaw,
+    wallet_id: str,
+    x402_adapter: Any,
+    requirements: Any,
+) -> dict[str, object]:
+    agent_network = x402_adapter._resolve_agent_network(wallet_id, None)
+    selected_gateway_kind = requirements.select_preferred_kind(
+        prefer_gateway=True,
+        source_network=agent_network,
+    )
+    selected_exact_kind = requirements.select_preferred_kind(
+        prefer_gateway=False,
+        source_network=agent_network,
+    )
+
+    gateway_available_balance: str | None = None
+    gateway_ready: bool | None = None
+    gateway_reason: str | None = None
+
+    if selected_gateway_kind is not None:
+        if client._nano_adapter is None:
+            gateway_ready = False
+            gateway_reason = "Gateway route is advertised but nanopayments are not enabled"
+        else:
+            try:
+                balance = await client.get_gateway_balance(wallet_id)
+                gateway_available_balance = balance.formatted_available
+                required_atomic = int(selected_gateway_kind.amount_atomic)
+                gateway_ready = balance.available >= required_atomic
+                gateway_reason = (
+                    "Gateway balance is sufficient for GatewayWalletBatched"
+                    if gateway_ready
+                    else "Gateway balance is below the required amount"
+                )
+            except Exception as exc:
+                gateway_ready = False
+                gateway_reason = f"Gateway balance check failed: {exc}"
+
+    if selected_gateway_kind is not None and gateway_ready:
+        return {
+            "selected_kind": selected_gateway_kind,
+            "selected_route": "nanopayment",
+            "payment_source": "gateway_balance",
+            "gateway_available_balance": gateway_available_balance,
+            "gateway_ready": gateway_ready,
+            "gateway_reason": gateway_reason,
+        }
+
+    if selected_exact_kind is not None:
+        return {
+            "selected_kind": selected_exact_kind,
+            "selected_route": "x402",
+            "payment_source": "direct_wallet",
+            "gateway_available_balance": gateway_available_balance,
+            "gateway_ready": gateway_ready,
+            "gateway_reason": gateway_reason,
+        }
+
+    if selected_gateway_kind is not None:
+        return {
+            "selected_kind": selected_gateway_kind,
+            "selected_route": "nanopayment",
+            "payment_source": "gateway_balance",
+            "gateway_available_balance": gateway_available_balance,
+            "gateway_ready": gateway_ready,
+            "gateway_reason": gateway_reason,
+        }
+
+    return {
+        "selected_kind": None,
+        "selected_route": None,
+        "payment_source": None,
+        "gateway_available_balance": gateway_available_balance,
+        "gateway_ready": gateway_ready,
+        "gateway_reason": gateway_reason,
+    }
+
+
+async def _inspect_x402_target(
+    *,
+    client: OmniClaw,
+    wallet_id: str,
+    url: str,
+    method: str = "GET",
+    headers: dict[str, str] | None = None,
+    body: str | bytes | None = None,
+) -> dict[str, object]:
+    x402_adapter = _find_adapter_by_method(client, PaymentMethod.X402)
+    if x402_adapter is None:
+        return {
+            "ok": False,
+            "requires_payment": False,
+            "reason": "X402 adapter is not registered",
+        }
+
+    try:
+        response, requirements = await x402_adapter._request_with_402_check(
+            url,
+            method=method,
+            headers=headers,
+            content=body,
+        )
+    except Exception as exc:
+        return {
+            "ok": False,
+            "requires_payment": False,
+            "reason": f"Inspection request failed: {exc}",
+        }
+
+    router_method = client.detect_method(url)
+    router_route = router_method.value if hasattr(router_method, "value") else str(router_method)
+
+    if response.status_code != 402:
+        return {
+            "ok": True,
+            "requires_payment": False,
+            "reason": "Endpoint does not currently require payment",
+            "router_detected_route": router_route,
+            "selected_route": None,
+            "payment_source": None,
+            "seller_accepts": [],
+            "selected_kind": None,
+            "x402_adapter": x402_adapter,
+        }
+
+    if not requirements:
+        return {
+            "ok": False,
+            "requires_payment": True,
+            "reason": "Endpoint returned 402 but payment requirements could not be parsed",
+            "router_detected_route": router_route,
+            "seller_accepts": [],
+            "selected_kind": None,
+            "x402_adapter": x402_adapter,
+        }
+
+    route_choice = await _choose_x402_route(
+        client=client,
+        wallet_id=wallet_id,
+        x402_adapter=x402_adapter,
+        requirements=requirements,
+    )
+    selected_kind = route_choice["selected_kind"]
+    selected_route = route_choice["selected_route"]
+    payment_source = route_choice["payment_source"]
+
+    seller_accepts: list[dict[str, object]] = []
+    for kind in requirements.accepts:
+        seller_accepts.append(
+            {
+                "scheme": kind.scheme,
+                "network": kind.network,
+                "asset": kind.asset,
+                "amount_atomic": kind.amount_atomic,
+                "amount_usdc": str(kind.get_amount_usdc()),
+                "pay_to": kind.recipient,
+                "facilitator_name": kind.facilitator_name or None,
+                "is_gateway_batched": kind.is_gateway_batched,
+            }
+        )
+
+    return {
+        "ok": True,
+        "requires_payment": True,
+        "reason": None,
+        "router_detected_route": selected_route,
+        "selected_route": selected_route,
+        "payment_source": payment_source,
+        "seller_accepts": seller_accepts,
+        "selected_kind": selected_kind,
+        "x402_adapter": x402_adapter,
+        "gateway_available_balance": route_choice["gateway_available_balance"],
+        "gateway_ready": route_choice["gateway_ready"],
+        "gateway_reason": route_choice["gateway_reason"],
+    }
 
 
 async def get_policy_manager(request: Request) -> PolicyManager:
@@ -616,12 +807,55 @@ async def pay(
     if not policy_mgr.is_valid_recipient(request.recipient, agent.wallet_id):
         raise HTTPException(status_code=400, detail="Recipient not allowed by policy")
 
-    amount = Decimal(request.amount)
+    is_url_payment = request.recipient.startswith("http")
+    amount_raw = request.amount
+    x402_details: dict[str, object] | None = None
+    preferred_url_route: str | None = None
+    if is_url_payment:
+        x402_details = await _inspect_x402_target(
+            client=client,
+            wallet_id=agent.wallet_id,
+            url=request.recipient,
+            method=request.method,
+            headers=request.headers,
+            body=request.body,
+        )
+        if not x402_details.get("ok"):
+            raise HTTPException(status_code=400, detail=str(x402_details.get("reason")))
+
+        if bool(x402_details.get("requires_payment")):
+            selected_kind = x402_details.get("selected_kind")
+            preferred_url_route = str(x402_details.get("selected_route") or "") or None
+            if selected_kind is None:
+                raise HTTPException(
+                    status_code=400,
+                    detail=str(
+                        x402_details.get("reason")
+                        or "Seller does not advertise a buyer-supported x402 payment kind"
+                    ),
+                )
+            if amount_raw is None:
+                amount_raw = str(selected_kind.get_amount_usdc())
+        elif amount_raw is None:
+            amount_raw = "0.00"
+
+    if amount_raw is None:
+        raise HTTPException(status_code=400, detail="amount is required for direct transfers")
+
+    amount = Decimal(amount_raw)
     allowed, reason = policy_mgr.check_limits(amount, agent.wallet_id)
     if not allowed:
         raise HTTPException(status_code=400, detail=reason)
 
     try:
+        metadata = dict(request.metadata or {})
+        if is_url_payment:
+            metadata.setdefault("method", request.method)
+            if request.body is not None:
+                metadata.setdefault("body", request.body)
+            if request.headers is not None:
+                metadata.setdefault("headers", request.headers)
+
         result = await client.pay(
             wallet_id=agent.wallet_id,
             recipient=request.recipient,
@@ -632,7 +866,11 @@ async def pay(
             fee_level=request.fee_level,
             check_trust=request.check_trust,
             skip_guards=request.skip_guards,
-            metadata=request.metadata,
+            method=request.method,
+            request_body=request.body,
+            request_headers=request.headers,
+            metadata=metadata or None,
+            preferred_url_route=preferred_url_route,
         )
         requires_confirmation = bool(
             result.metadata.get("confirmation_required") if result.metadata else False
@@ -654,15 +892,16 @@ async def pay(
             error=result.error,
             requires_confirmation=requires_confirmation,
             confirmation_id=confirmation_id,
+            response_data=result.resource_data,
         )
     except Exception as e:
         logger.error(f"Payment failed: {e}")
         return PayResponse(
             success=False,
-            amount=_fmt_amount(request.amount),
+            amount=_fmt_amount(amount_raw),
             recipient=request.recipient,
             status="FAILED",
-            method="TRANSFER",
+            method="x402" if is_url_payment else "TRANSFER",
             error=str(e),
             requires_confirmation=False,
         )
@@ -957,53 +1196,115 @@ async def list_wallets(
     return ListWalletsResponse(wallets=wallets)
 
 
-@router.post("/x402/pay", response_model=PayResponse)
-async def x402_pay(
-    request: X402PayRequest,
+@router.post("/x402/inspect", response_model=X402InspectResponse)
+async def x402_inspect(
+    request: X402InspectRequest,
     agent: AuthenticatedAgent = Depends(get_current_agent),
+    policy_mgr: PolicyManager = Depends(get_policy_manager),
     client: OmniClaw = Depends(get_omniclaw_client),
 ):
-    """Execute an automated x402 payment flow using client.pay() for automatic routing to Circle Gateway."""
-    try:
-        amount = request.amount if request.amount else "0.01"
-        result = await client.pay(
+    """Inspect an x402 endpoint and report which buyer route OmniClaw would use."""
+    if agent.wallet_id.startswith("pending-"):
+        raise HTTPException(
+            status_code=425,
+            detail="Wallet is currently initializing. Please try again in a few seconds.",
+        )
+
+    if not policy_mgr.is_valid_recipient(request.url, agent.wallet_id):
+        return X402InspectResponse(
+            url=request.url,
+            requires_payment=False,
+            buyer_ready=False,
+            reason="Recipient not allowed by policy",
+            router_detected_route="transfer",
+        )
+
+    inspection = await _inspect_x402_target(
+        client=client,
+        wallet_id=agent.wallet_id,
+        url=request.url,
+        method=request.method,
+        headers=request.headers,
+        body=request.body,
+    )
+    if not inspection.get("ok"):
+        return X402InspectResponse(
+            url=request.url,
+            requires_payment=False,
+            buyer_ready=False,
+            reason=str(inspection.get("reason")),
+        )
+
+    if not inspection.get("requires_payment"):
+        return X402InspectResponse(
+            url=request.url,
+            requires_payment=False,
+            buyer_ready=True,
+            reason=str(inspection.get("reason")),
+            router_detected_route=inspection.get("router_detected_route"),
+            selected_route=None,
+            payment_source=None,
+        )
+
+    x402_adapter = inspection["x402_adapter"]
+    selected_kind = inspection.get("selected_kind")
+    selected_route = inspection.get("selected_route")
+    payment_source = inspection.get("payment_source")
+    seller_accepts = inspection.get("seller_accepts") or []
+
+    buyer_address: str | None = None
+    if client._nano_adapter:
+        buyer_address = client._nano_adapter.address
+    else:
+        private_key = os.environ.get("OMNICLAW_PRIVATE_KEY")
+        if private_key:
+            try:
+                from eth_account import Account
+
+                if not private_key.startswith("0x"):
+                    private_key = f"0x{private_key}"
+                buyer_address = Account.from_key(private_key).address
+            except Exception:
+                buyer_address = None
+
+    gateway_available_balance = inspection.get("gateway_available_balance")
+    buyer_ready = False
+    reason: str | None = None
+
+    if selected_kind is None:
+        reason = "Seller does not advertise a buyer-supported x402 payment kind"
+    elif selected_route == "nanopayment":
+        buyer_ready = bool(inspection.get("gateway_ready"))
+        reason = str(inspection.get("gateway_reason") or "")
+    else:
+        sim_result = await x402_adapter.simulate(
             wallet_id=agent.wallet_id,
             recipient=request.url,
-            amount=amount,
-            idempotency_key=request.idempotency_key,
-            metadata={"method": request.method, "body": request.body, "headers": request.headers},
+            amount=selected_kind.get_amount_usdc(),
+            method=request.method,
+            request_body=request.body,
+            request_headers=request.headers,
         )
-        requires_confirmation = bool(
-            result.metadata.get("confirmation_required") if result.metadata else False
-        )
-        confirmation_id = result.metadata.get("confirmation_id") if result.metadata else None
+        buyer_ready = bool(sim_result.get("would_succeed"))
+        reason = sim_result.get("reason")
 
-        return PayResponse(
-            success=result.success,
-            transaction_id=result.transaction_id,
-            blockchain_tx=result.blockchain_tx,
-            amount=_fmt_amount(result.amount),
-            recipient=result.recipient,
-            status=result.status.value
-            if result.status and hasattr(result.status, "value")
-            else (str(result.status) if result.status else "failed"),
-            method="nanopayment",
-            error=result.error,
-            requires_confirmation=requires_confirmation,
-            confirmation_id=confirmation_id,
-            response_data=result.resource_data,
-        )
-    except Exception as e:
-        logger.error(f"x402 payment failed: {e}")
-        return PayResponse(
-            success=False,
-            amount="0.00",
-            recipient=request.url,
-            status="FAILED",
-            method="nanopayment",
-            error=str(e),
-            response_data=None,
-        )
+    return X402InspectResponse(
+        url=request.url,
+        requires_payment=True,
+        buyer_ready=buyer_ready,
+        reason=reason,
+        router_detected_route=inspection.get("router_detected_route"),
+        selected_route=selected_route,
+        payment_source=payment_source,
+        buyer_address=buyer_address,
+        gateway_available_balance=gateway_available_balance,
+        selected_scheme=selected_kind.scheme if selected_kind else None,
+        selected_network=selected_kind.network if selected_kind else None,
+        selected_amount_atomic=selected_kind.amount_atomic if selected_kind else None,
+        selected_amount_usdc=str(selected_kind.get_amount_usdc()) if selected_kind else None,
+        selected_pay_to=selected_kind.recipient if selected_kind else None,
+        seller_accepts=seller_accepts,
+    )
 
 
 @router.post("/x402/verify")

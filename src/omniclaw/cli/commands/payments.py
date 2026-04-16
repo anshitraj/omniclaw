@@ -45,61 +45,24 @@ def pay(
 
     client = get_client()
 
-    # If recipient is a URL, handle x402 flow
-    if recipient.startswith("http"):
-        if not is_quiet():
-            typer.echo(f"Paying for x402 service: {recipient}")
-        payload: dict[str, Any] = {
-            "url": recipient,
-            "method": method,
-        }
-        if body:
-            payload["body"] = body
-        if header:
-            parsed_headers: dict[str, str] = {}
-            for raw in header:
-                key, sep, value = raw.partition(":")
-                if not sep:
-                    typer.echo(
-                        f"Error: Invalid header '{raw}'. Use 'Header: value' format.",
-                        err=True,
-                    )
-                    raise typer.Exit(1)
-                parsed_headers[key.strip()] = value.strip()
-            payload["headers"] = parsed_headers
-        if idempotency_key:
-            payload["idempotency_key"] = idempotency_key
+    parsed_headers: dict[str, str] | None = None
+    if header:
+        parsed_headers = {}
+        for raw in header:
+            key, sep, value = raw.partition(":")
+            if not sep:
+                typer.echo(
+                    f"Error: Invalid header '{raw}'. Use 'Header: value' format.",
+                    err=True,
+                )
+                raise typer.Exit(1)
+            parsed_headers[key.strip()] = value.strip()
 
-        try:
-            response = client.post("/api/v1/x402/pay", json=payload)
-            response.raise_for_status()
-            data = response.json()
-            requires_confirmation = data.get("requires_confirmation") or data.get(
-                "confirmation_required"
-            )
-            if not is_quiet() and requires_confirmation:
-                confirmation_id = data.get("confirmation_id")
-                if confirmation_id:
-                    typer.echo("Payment requires confirmation.")
-                    typer.echo(f"Run: omniclaw-cli confirmations approve --id {confirmation_id}")
-            if output:
-                Path(output).write_text(json.dumps(data, indent=2))
-                if not is_quiet():
-                    typer.echo(f"Response saved to {output}")
-                if is_quiet():
-                    typer.echo(json.dumps(data, indent=2))
-            else:
-                typer.echo(json.dumps(data, indent=2))
-            return data
-        except httpx.HTTPStatusError as e:
-            typer.echo(f"Error: {e.response.json().get('detail', str(e))}", err=True)
-            raise typer.Exit(1) from e
-        except Exception as e:
-            typer.echo(f"Error: {e}", err=True)
-            raise typer.Exit(1) from e
+    is_url_payment = recipient.startswith("http")
+    if is_url_payment and not is_quiet():
+        typer.echo(f"Paying for x402 service: {recipient}")
 
-    # Standard direct transfer
-    if not amount:
+    if not amount and not is_url_payment:
         if is_quiet():
             typer.echo("Error: --amount is required for direct transfers", err=True)
             raise typer.Exit(1)
@@ -121,6 +84,12 @@ def pay(
         payload["check_trust"] = True
     if skip_guards:
         payload["skip_guards"] = True
+    if is_url_payment:
+        payload["method"] = method
+        if body:
+            payload["body"] = body
+        if parsed_headers:
+            payload["headers"] = parsed_headers
 
     try:
         response = client.post("/api/v1/pay", json=payload)
@@ -134,6 +103,10 @@ def pay(
             if confirmation_id:
                 typer.echo("Payment requires confirmation.")
                 typer.echo(f"Run: omniclaw-cli confirmations approve --id {confirmation_id}")
+        if output and is_url_payment:
+            Path(output).write_text(json.dumps(data, indent=2))
+            if not is_quiet():
+                typer.echo(f"Response saved to {output}")
         typer.echo(json.dumps(data, indent=2))
         return data
     except httpx.HTTPStatusError as e:
@@ -189,6 +162,54 @@ def simulate(
         raise typer.Exit(1) from e
 
 
+def inspect_x402(
+    recipient: str = typer.Option(..., "--recipient", help="x402 URL to inspect"),
+    amount: str | None = typer.Option(None, "--amount", help="Optional max amount in USDC"),
+    method: str = typer.Option("GET", "--method", help="HTTP method for x402 requests"),
+    body: str | None = typer.Option(None, "--body", help="Request body for x402 requests"),
+    header: list[str] = typer.Option([], "--header", help="Additional headers for x402 requests"),
+) -> dict[str, Any]:
+    """Inspect an x402 endpoint and show which payment route OmniClaw would use."""
+    if not recipient.startswith("http"):
+        typer.echo("Error: --recipient must be an HTTP(S) URL for x402 inspection", err=True)
+        raise typer.Exit(1)
+
+    client = get_client()
+    parsed_headers: dict[str, str] | None = None
+    if header:
+        parsed_headers = {}
+        for raw in header:
+            key, sep, value = raw.partition(":")
+            if not sep:
+                typer.echo(
+                    f"Error: Invalid header '{raw}'. Use 'Header: value' format.",
+                    err=True,
+                )
+                raise typer.Exit(1)
+            parsed_headers[key.strip()] = value.strip()
+
+    payload: dict[str, Any] = {"url": recipient, "method": method}
+    if amount is not None:
+        payload["amount"] = amount
+    if body is not None:
+        payload["body"] = body
+    if parsed_headers:
+        payload["headers"] = parsed_headers
+
+    try:
+        response = client.post("/api/v1/x402/inspect", json=payload)
+        response.raise_for_status()
+        data = response.json()
+        typer.echo(json.dumps(data, indent=2))
+        return data
+    except httpx.HTTPStatusError as e:
+        typer.echo(f"Error: {e.response.json().get('detail', str(e))}", err=True)
+        raise typer.Exit(1) from e
+    except Exception as e:
+        typer.echo(f"Error: {e}", err=True)
+        raise typer.Exit(1) from e
+
+
 def can_pay(
     recipient: str = typer.Option(..., "--recipient", help="Recipient to check"),
 ) -> dict[str, Any]:
@@ -219,11 +240,15 @@ def can_pay_alias(
 def register(app: typer.Typer, group: typer.Typer | None = None) -> None:
     app.command()(pay)
     app.command()(simulate)
+    app.command(name="inspect-x402")(inspect_x402)
+    app.command(name="inspect_x402", help="Alias for inspect-x402")(inspect_x402)
     app.command("can-pay")(can_pay)
     app.command(name="can_pay", help="Alias for can-pay")(can_pay_alias)
 
     if group is not None and group is not app:
         group.command()(pay)
         group.command()(simulate)
+        group.command(name="inspect-x402")(inspect_x402)
+        group.command(name="inspect_x402", help="Alias for inspect-x402")(inspect_x402)
         group.command("can-pay")(can_pay)
         group.command(name="can_pay", help="Alias for can-pay")(can_pay_alias)

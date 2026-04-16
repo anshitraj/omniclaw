@@ -99,8 +99,8 @@ USDC_CONTRACTS = {
     # Polygon
     "MATIC": "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",
     "MATIC-AMOY": "0x41e94eb019c0762f9bfcf9fb1e58725bfb0e7582",
-    # Arc - USDC on Arc Testnet
-    "ARC-TESTNET": "0x79A02482A880bCE3F13e09Da970dC34db4CD24d1",
+    # Arc - official USDC ERC-20 interface on Arc Testnet
+    "ARC-TESTNET": "0x3600000000000000000000000000000000000000",
 }
 
 # Iris API

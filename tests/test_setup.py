@@ -10,12 +10,15 @@ import pytest
 
 from omniclaw.onboarding import (
     SetupError,
+    auto_setup_entity_secret,
     create_env_file,
     doctor,
     generate_entity_secret,
     load_managed_entity_secret,
     print_doctor_status,
+    quick_setup,
     store_managed_credentials,
+    validate_entity_secret,
     verify_setup,
 )
 
@@ -36,6 +39,23 @@ class TestGenerateEntitySecret:
         secrets = [generate_entity_secret() for _ in range(10)]
 
         assert len(set(secrets)) == 10  # All unique
+
+
+class TestValidateEntitySecret:
+    """Tests for validate_entity_secret()."""
+
+    def test_accepts_64_char_hex(self) -> None:
+        secret = "a" * 64
+
+        assert validate_entity_secret(f" {secret}\n") == secret
+
+    def test_rejects_wrong_length(self) -> None:
+        with pytest.raises(SetupError, match="64 hex characters"):
+            validate_entity_secret("a" * 63)
+
+    def test_rejects_non_hex(self) -> None:
+        with pytest.raises(SetupError, match="valid hexadecimal"):
+            validate_entity_secret("z" * 64)
 
 
 class TestCreateEnvFile:
@@ -104,6 +124,65 @@ class TestCreateEnvFile:
 
             content = env_path.read_text()
             assert "OMNICLAW_NETWORK=ARC" in content
+
+    def test_rejects_invalid_entity_secret(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            env_path = Path(tmpdir) / ".env"
+
+            with pytest.raises(SetupError, match="64 hex characters"):
+                create_env_file(
+                    api_key="key",
+                    entity_secret="short",
+                    env_path=env_path,
+                )
+
+
+class TestQuickSetup:
+    """Tests for quick_setup()."""
+
+    def test_uses_existing_entity_secret_without_registering(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            env_path = Path(tmpdir) / ".env"
+            xdg_config_home = Path(tmpdir) / "xdg"
+            existing_secret = "d" * 64
+
+            with (
+                patch.dict(os.environ, {"XDG_CONFIG_HOME": str(xdg_config_home)}, clear=True),
+                patch("omniclaw.onboarding.register_entity_secret") as register_mock,
+            ):
+                result = quick_setup(
+                    api_key="TEST_API_KEY",
+                    entity_secret=existing_secret,
+                    env_path=env_path,
+                )
+
+                register_mock.assert_not_called()
+                assert result["entity_secret"] == existing_secret
+                assert f"ENTITY_SECRET={existing_secret}" in env_path.read_text()
+                assert load_managed_entity_secret("TEST_API_KEY") == existing_secret
+
+    def test_auto_setup_uses_managed_secret_without_registering_new_one(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            xdg_config_home = Path(tmpdir) / "xdg"
+            existing_secret = "e" * 64
+
+            with (
+                patch.dict(os.environ, {"XDG_CONFIG_HOME": str(xdg_config_home)}, clear=True),
+                patch("omniclaw.onboarding.register_entity_secret") as register_mock,
+                patch("omniclaw.onboarding.generate_entity_secret") as generate_mock,
+            ):
+                store_managed_credentials(
+                    "TEST_API_KEY",
+                    existing_secret,
+                    source="test",
+                )
+
+                result = auto_setup_entity_secret("TEST_API_KEY")
+
+                assert result == existing_secret
+                assert os.environ["ENTITY_SECRET"] == existing_secret
+                generate_mock.assert_not_called()
+                register_mock.assert_not_called()
 
 
 class TestVerifySetup:

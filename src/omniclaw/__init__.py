@@ -91,6 +91,7 @@ from omniclaw.onboarding import (
     print_setup_status,
     quick_setup,
     store_managed_credentials,
+    validate_entity_secret,
     verify_setup,
 )
 
@@ -144,7 +145,7 @@ from omniclaw.protocols.nanopayments import (
 )
 from omniclaw.trust.gate import TrustGate
 
-__version__ = "0.0.5"
+__version__ = "0.0.6"
 __all__ = [
     # Main Client
     "OmniClaw",
@@ -159,6 +160,7 @@ __all__ = [
     "find_recovery_file",
     "get_config_dir",
     "store_managed_credentials",
+    "validate_entity_secret",
     # Types
     "Network",
     "FeeLevel",

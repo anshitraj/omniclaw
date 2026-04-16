@@ -500,9 +500,9 @@ async def run_test():
 
         try:
             pay_resp = await buyer_client.post(
-                "/api/v1/x402/pay",
+                "/api/v1/pay",
                 json={
-                    "url": f"http://localhost:{SELLER_SERVICE_PORT}/api/data",
+                    "recipient": f"http://localhost:{SELLER_SERVICE_PORT}/api/data",
                     "method": "GET",
                 },
                 timeout=60,

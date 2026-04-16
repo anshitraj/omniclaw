@@ -158,6 +158,57 @@ class TestGatewayMiddleware:
         for accept in body["accepts"]:
             assert accept["extra"]["name"] == "GatewayWalletBatched"
 
+    @pytest.mark.asyncio
+    async def test_non_circle_facilitator_advertises_standard_exact(self):
+        facilitator = MagicMock()
+        facilitator.name = "coinbase"
+
+        middleware = GatewayMiddleware(
+            seller_address="0x" + "a" * 40,
+            nanopayment_client=_make_client(),
+            supported_kinds=_make_kinds(),
+            facilitator=facilitator,
+        )
+
+        body = await middleware._build_402_response("$0.001")
+
+        for accept in body["accepts"]:
+            assert accept["scheme"] == "exact"
+            assert "extra" not in accept
+
+    async def test_external_facilitator_can_create_accepts(self):
+        facilitator = AsyncMock()
+        facilitator.name = "thirdweb"
+        facilitator.create_accepts.return_value = [
+            {
+                "scheme": "exact",
+                "network": "eip155:84532",
+                "amount": "10000",
+                "payTo": "0x" + "b" * 40,
+                "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+            }
+        ]
+        middleware = GatewayMiddleware(
+            seller_address="0x" + "a" * 40,
+            nanopayment_client=None,
+            facilitator=facilitator,
+        )
+
+        body = await middleware._build_402_response(
+            "$0.01",
+            resource_url="https://seller.example.com/compute",
+            method="GET",
+        )
+
+        facilitator.create_accepts.assert_awaited_once_with(
+            resource_url="https://seller.example.com/compute",
+            method="GET",
+            price="$0.01",
+            server_wallet_address="0x" + "a" * 40,
+        )
+        assert body["x402Version"] == 2
+        assert body["accepts"][0]["network"] == "eip155:84532"
+
     async def test_402_body_has_verifying_contract(self):
         middleware = GatewayMiddleware(
             seller_address="0x" + "a" * 40,
@@ -312,3 +363,48 @@ class TestHandle:
         body = exc_info.value.detail
         assert body["x402Version"] == 2
         assert body["accepts"] == []
+
+    @pytest.mark.asyncio
+    async def test_non_circle_facilitator_settle_uses_standard_exact_requirements(self):
+        facilitator = AsyncMock()
+        facilitator.name = "coinbase"
+        facilitator.settle.return_value = MagicMock(
+            success=True,
+            transaction="fac-123",
+            payer="0x" + "a" * 40,
+        )
+
+        authorization = EIP3009Authorization.create(
+            from_address="0x" + "a" * 40,
+            to="0x" + "a" * 40,
+            value="1000",
+            valid_before=9999999999,
+            nonce="0x" + "b" * 64,
+        )
+        payload = PaymentPayload(
+            x402_version=2,
+            scheme="exact",
+            network="eip155:5042002",
+            payload=PaymentPayloadInner(
+                signature="0x" + "c" * 130,
+                authorization=authorization,
+            ),
+        )
+        sig_header = base64.b64encode(json.dumps(payload.to_dict()).encode()).decode()
+
+        middleware = GatewayMiddleware(
+            seller_address="0x" + "a" * 40,
+            nanopayment_client=_make_client(),
+            supported_kinds=_make_kinds(),
+            facilitator=facilitator,
+        )
+
+        info = await middleware.handle({"payment-signature": sig_header}, "$0.001")
+
+        assert info.verified is True
+        assert info.transaction == "fac-123"
+        facilitator.settle.assert_awaited_once()
+        _, req_dict = facilitator.settle.await_args.args
+        accepted = req_dict["accepts"][0]
+        assert accepted["scheme"] == "exact"
+        assert "extra" not in accepted
